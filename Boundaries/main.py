@@ -1,0 +1,141 @@
+import polars as pl
+import pandas as pd
+import geopandas as gpd
+from tqdm import tqdm
+import utils as ut
+import itertools
+
+
+def generate_networks(
+    combined,
+    source="foursquare",
+    min_retail_in_cell=2,
+    min_retail_in_island=10,
+    min_retail_in_network=15,
+):
+
+    input_cells = combined.filter(
+        (pl.col(f"{source}_count") >= min_retail_in_cell)
+        | (pl.col("retail_landuse") == True)
+    )
+
+    # Example usage
+    cells_with_network = ut.create_networks(input_cells)
+
+    # island rmeoval
+    # keep only the networks with more than 10 retail venues or more than 1 track node
+    # We prune the exhaustive set of retail cen-
+    # tres to include only those with at least two hexagon units and at least ten overall retail unit points contained
+    # within them, a threshold used by Pavlis et al. (2018) and based on UK retail planning policy 18 .
+
+    # "In England and Wales, agglomerations with less than
+    # fifteen VOA retail points and ten OSM retail points are removed from the set, while for Scotland and Northern
+    # Ireland the condition is based on ten OSM points."""
+    # from https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/articles/highstreetsingreatbritain/march2020
+    # Spatial clustering has been implemented using the data clustering algorithm DBSCAN (Density-based spatial clustering of applications with noise). Candidate retail clusters required a minimum of 15 retail address point geometries within 15 buildings and a maximum of 150 metres between the address geometries in the cluster.
+
+    filt_cells_with_network = cells_with_network.filter(
+        (
+            (cells_with_network[f"total_{source}_count"] >= min_retail_in_island)
+            | (cells_with_network["trackNodes"] >= 2)
+        )
+        & (cells_with_network[f"total_{source}_count"] >= min_retail_in_network)
+    ).sort("network_number")
+
+    ut.to_parquet(
+        filt_cells_with_network,
+        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_cells",
+    )
+
+    filt_cells_with_network = ut.to_geoframe(filt_cells_with_network)
+    dissolved = filt_cells_with_network.dissolve(
+        by="network_number", as_index=False
+    ).reset_index(drop=True)
+
+    dissolved["geometry"] = dissolved["geometry"].apply(
+        lambda geom: ut.fill_holes(geom)
+    )
+
+    # Final GeoDataFrame with dissolved unique polygons
+    dissolved_unique_gdf = gpd.GeoDataFrame(
+        dissolved, geometry="geometry", crs="EPSG:27700"
+    )
+    dissolved_unique_gdf.to_parquet(
+        f"data/output_files/retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_dissolved.parquet"
+    )
+
+
+# Define parameter values
+sources = ["foursquare", "overture"]
+min_retail_in_cell_values = [1, 2, 3]
+min_retail_in_island_values = [5, 10, 15]
+min_retail_in_network_values = [10, 15, 20, 25]
+
+
+# Generate all parameter combinations
+param_combinations = itertools.product(
+    sources,
+    min_retail_in_cell_values,
+    min_retail_in_island_values,
+    min_retail_in_network_values,
+)
+
+# Convert to a list once for both counting and iteration
+param_combinations_list = list(param_combinations)
+
+# Get the total combinations count
+total_combos = len(param_combinations_list)
+
+print(f"Total combinations: {total_combos}")
+# Load data only once
+foursquare = pl.read_parquet(
+    "data/input_files/uk_foursquare_datefields_admin_categories.parquet"
+)
+overture = pl.read_parquet("data/input_files/poi_uk_overture_proc.parquet")
+
+foursquare = foursquare.filter(
+    (foursquare["level1_category_name"] == "Retail")
+    | (foursquare["level1_category_name"] == "Dining and Drinking")
+    | (foursquare["level1_category_name"] == "Arts and Entertainment")
+    | (foursquare["level1_category_name"] == "Sports and Recreation")
+)
+overture = overture.filter(
+    (overture["level1_category_name"] == "retail")
+    | (overture["level1_category_name"] == "eat_and_drink")
+    | (overture["level1_category_name"] == "beauty_and_spa")
+    | (overture["level1_category_name"] == "arts_and_entertainment")
+    | (overture["level2_category_name"] == "activate_life")
+    | (overture["level1_category_name"] == "automotive")
+    | (overture["level2_category_name"] == "art_gallery")
+    | (overture["level2_category_name"] == "museum")
+)
+
+foursquare = ut.add_h3_11_column(foursquare)
+overture = ut.add_h3_11_column(overture)
+
+foursquare_cells = ut.agg_to_cells(foursquare)
+overture_cells = ut.agg_to_cells(overture)
+
+# Load land use data
+land_use_cells = pd.read_parquet("data/input_files/retail_landuse_h3.parquet")
+land_use_cells = pl.DataFrame(land_use_cells)
+combined = ut.create_combined_table(foursquare_cells, overture_cells, land_use_cells)
+
+
+for idx, (
+    source,
+    min_retail_in_cell,
+    min_retail_in_island,
+    min_retail_in_network,
+) in enumerate(param_combinations_list, start=1):
+    print(f"Processing combination {idx} of {total_combos}")
+    print(
+        f"Parameters: source={source}, min_cell={min_retail_in_cell}, min_island={min_retail_in_island}, min_network={min_retail_in_network}"
+    )
+    generate_networks(
+        combined,
+        source=source,
+        min_retail_in_cell=min_retail_in_cell,
+        min_retail_in_island=min_retail_in_island,
+        min_retail_in_network=min_retail_in_network,
+    )
