@@ -1,9 +1,11 @@
-import pandas as pd
+
 import polars as pl
 import h3
 import geopandas as gpd
 from shapely.geometry import Polygon, MultiPolygon
 import networkx as nx
+from collections import defaultdict
+from itertools import combinations
 
 
 def to_geoframe(df):
@@ -22,7 +24,7 @@ def to_geoframe(df):
 
 def to_parquet(df, file_name):
     df = to_geoframe(df)
-    df.to_parquet(f"data/output_files/{file_name}.parquet")
+    df.to_parquet(f"~/RetailCentres/data/output_files/{file_name}.parquet")
 
 
 def add_h3_11_column(df: pl.DataFrame) -> pl.DataFrame:
@@ -99,7 +101,9 @@ def create_networks(input_cells):
     graph.add_nodes_from(h3_cells_set)  # Ensure all cells are included even if they have no edges
     graph.add_edges_from(edges)
     components = list(nx.connected_components(graph))
-
+    
+    # Sort components by the smallest H3 index in each to ensure deterministic ordering
+    components = sorted(components, key=lambda comp: min(comp))
     # Create a polars frame of h3 with a column of the network number, number of nodes in network and total retail venues in network
     networks = pl.DataFrame(
         {
@@ -109,21 +113,49 @@ def create_networks(input_cells):
         }
     )
 
-    # Join the networks with the input cells to get the retail count
-    cells_with_network = networks.join(input_cells, on="h3_11", how="inner")
-
-    cells_with_network = cells_with_network.join(
-        cells_with_network.group_by("network_number").agg([
-            pl.sum("overture_count").alias("total_overture_count"),
-            pl.sum("foursquare_count").alias("total_foursquare_count")
-        ]),
-        on="network_number",
-        how="inner"
-    ).sort("network_number")
+    cells_with_network = join_networks_with_cells(networks, input_cells)
 
     return cells_with_network
 
-# Step 6: Fill small holes in the geometries
+
+
+import polars as pl
+
+def join_networks_with_cells(networks, input_cells):
+    # Select relevant columns and join networks with input cells
+    cells_with_network = (
+        networks
+        .select(["h3_11", "network_number"])  # Keep only relevant columns
+        .join(input_cells, on="h3_11", how="left")  # Left join with input_cells
+    )
+    
+    # Aggregate data by network_number and join the results back
+    aggregated = (
+        cells_with_network
+        .group_by("network_number")
+        .agg([
+            pl.sum("overture_count").alias("total_overture_count"),
+            pl.sum("foursquare_count").alias("total_foursquare_count"),
+            pl.len().alias("trackNodes").cast(pl.Int64),
+        ])
+    )
+    
+    cells_with_network = (
+        cells_with_network
+        .join(aggregated, on="network_number", how="inner")
+        .sort("network_number")
+    )
+    
+    # Fill missing values
+    cells_with_network = cells_with_network.with_columns([
+        pl.col("overture_count").fill_null(0),
+        pl.col("foursquare_count").fill_null(0),
+        pl.col("retail_landuse").fill_null(False),
+    ])
+    
+    return cells_with_network
+
+    
 def fill_holes(geometry, threshold = 2000 * 1e6):
     """Fill holes in polygons smaller than the threshold."""
     if isinstance(geometry, Polygon):
@@ -133,3 +165,97 @@ def fill_holes(geometry, threshold = 2000 * 1e6):
     elif isinstance(geometry, MultiPolygon):
         return MultiPolygon([fill_holes(p, threshold) for p in geometry.geoms])
     return geometry
+
+
+def filter_foursquare(foursquare):
+    foursquare = foursquare.filter(
+        (foursquare["level1_category_name"] == "Retail")
+        | (foursquare["level1_category_name"] == "Dining and Drinking")
+        | (foursquare["level1_category_name"] == "Arts and Entertainment")
+        | (foursquare["level1_category_name"] == "Sports and Recreation")
+        | (foursquare["level2_category_name"] == "Health and Beauty Service")  #buissness
+        | (foursquare["level2_category_name"] == "Automotive Service")  #buissness
+        # | (foursquare["level3_category_name"] == "ATM") #buisness, finanaical service
+        | (foursquare["level4_category_name"] == "Bank") #buisness, finanaical service
+        | (foursquare["level3_category_name"] == "Credit Union") #buisness, finanaical service
+        | (foursquare["level3_category_name"] == "Real Estate Agency") #buisness,real estate serice
+        | (foursquare["level3_category_name"] == "Law Office") 
+        | (foursquare["level3_category_name"] == "Loans Agency") #buisness, finanaical service
+        # | (foursquare["level3_category_name"] == "Insurance Agency") #buisness, finanaical service
+        | (foursquare["level2_category_name"] == "Computer Repair Service") #buisness
+        | (foursquare["level2_category_name"] == "Pet Service") #buisness
+        | (foursquare["level2_category_name"] == "Photography Service") #buisness
+        | (foursquare["level2_category_name"] == "Locksmith") #buisness
+        | (foursquare["level2_category_name"] == "Funeral Home") #buisness
+        | (foursquare["level3_category_name"] == "Coworking Space") #buisness, offce
+        | (foursquare["level2_category_name"] == "Laundry Service") #buisness
+        | (foursquare["level2_category_name"] == "Laundromat") #buisness
+        #transsport
+        | (foursquare["level2_category_name"] == "Fuel Station") #transsport
+        | (foursquare["level2_category_name"] == "Travel Agency") #transsport
+        | (foursquare["level2_category_name"] == "Tourist Information and Service") #transsport (covers tourist info shops and some travel agencies)
+        #medical 
+        | (foursquare["level3_category_name"] == "Doctors Office") #most gps
+        | (foursquare["level2_category_name"] == "Dentist") #dentists
+        | (foursquare["level2_category_name"] == "Veterinarian") #vets
+        | (foursquare["level2_category_name"] == "Physical Therapy Clinic") #physio
+        #community
+        | (foursquare["level3_category_name"] == "Post Office") #community
+        | (foursquare["level2_category_name"] == "Library") #community
+        | (foursquare["level2_category_name"] == "Community Center") #community
+        | (foursquare["level2_category_name"] == "Social Club") #community
+    )
+
+    #Accounting, mental health service, charities are a bit of a mess.
+
+    #load alexs filt
+    cats = pl.read_csv("data/POI_files/alex_filter.csv")
+    #set the nulls in the remove column to 0
+    cats = cats.with_columns(
+        pl.col("Remove").fill_null(0).cast(pl.Int64)
+    )
+    cats = cats.filter(~(cats["Remove"] == 1))
+    # cats = cats.filter(cats["Remove"] != 1)
+
+
+    def filter_matching_categories(data_df, reference_df):
+        """
+        Filter rows in data_df where the category hierarchy matches one from reference_df,
+        considering null values as valid matches when they appear in both DataFrames.
+        """
+        category_cols = [
+            'level1_category_name',
+            'level2_category_name',
+            'level3_category_name',
+            'level4_category_name'
+        ]
+        
+        # Create an expression that matches categories including nulls
+        conditions = []
+        
+        for col in category_cols:
+            # A category matches if either:
+            # 1. Both values are null, or
+            # 2. The value exists in the reference DataFrame for this column
+            condition = (
+                (pl.col(col).is_null() & pl.lit(reference_df[col].null_count() > 0)) |
+                pl.col(col).is_in(reference_df.select(col).filter(pl.col(col).is_not_null()).unique())
+            )
+            conditions.append(condition)
+        
+        # Combine all conditions with AND
+        final_condition = conditions[0]
+        for cond in conditions[1:]:
+            final_condition = final_condition & cond
+        
+        # Apply the filter
+        result = data_df.filter(final_condition)
+        
+        return result
+
+    foursquare = filter_matching_categories(foursquare, cats)
+    #remove any with a date closed
+    foursquare = foursquare.filter(foursquare["date_closed"].is_null())
+    #remove any with same name and lat lng (some have multiple categories)
+    foursquare = foursquare.unique(subset=["name","lat","lng"])
+    return foursquare

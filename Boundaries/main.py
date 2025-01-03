@@ -1,17 +1,19 @@
 import polars as pl
 import pandas as pd
 import geopandas as gpd
-from tqdm import tqdm
 import utils as ut
 import itertools
+import network_merger
 
 
-def generate_networks(
+def generate_networks_mergefirst(
     combined,
     source="foursquare",
     min_retail_in_cell=2,
     min_retail_in_island=10,
     min_retail_in_network=15,
+    min_to_fill=5,
+    merge_adjacent=True
 ):
 
     input_cells = combined.filter(
@@ -22,7 +24,16 @@ def generate_networks(
     # Example usage
     cells_with_network = ut.create_networks(input_cells)
 
-    # island rmeoval
+    ut.to_parquet(
+        cells_with_network,
+        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}",
+    )
+
+    if merge_adjacent:
+        cells_with_network = network_merger.merge_networks_separated_by_one_cell(cells_with_network)
+        cells_with_network = ut.join_networks_with_cells(cells_with_network, input_cells) #add the retail count to the network
+
+        # island rmeoval
     # keep only the networks with more than 10 retail venues or more than 1 track node
     # We prune the exhaustive set of retail cen-
     # tres to include only those with at least two hexagon units and at least ten overall retail unit points contained
@@ -42,11 +53,22 @@ def generate_networks(
         & (cells_with_network[f"total_{source}_count"] >= min_retail_in_network)
     ).sort("network_number")
 
+
     ut.to_parquet(
         filt_cells_with_network,
-        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_cells",
+        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_merge_{merge_adjacent}",
     )
 
+    #if min_to_fill is 7, we don't fill any cells
+    if min_to_fill < 7:
+        
+        filt_cells_with_network = network_merger.fill_until_no_new_cells(filt_cells_with_network, min_neighbours=min_to_fill)
+        filt_cells_with_network = ut.join_networks_with_cells(filt_cells_with_network, input_cells) #add the retail count to the network
+
+    ut.to_parquet(
+        filt_cells_with_network,
+        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_mrt_{min_to_fill}_filled_merge_{merge_adjacent}",
+    )
     filt_cells_with_network = ut.to_geoframe(filt_cells_with_network)
     dissolved = filt_cells_with_network.dissolve(
         by="network_number", as_index=False
@@ -61,15 +83,23 @@ def generate_networks(
         dissolved, geometry="geometry", crs="EPSG:27700"
     )
     dissolved_unique_gdf.to_parquet(
-        f"data/output_files/retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_dissolved.parquet"
+        f"data/output_files/retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_mtf_{min_to_fill}_dissolved_merged_{merge_adjacent}.parquet"
     )
 
 
-# Define parameter values
-sources = ["foursquare", "overture"]
-min_retail_in_cell_values = [1, 2, 3]
-min_retail_in_island_values = [5, 10, 15]
-min_retail_in_network_values = [10, 15, 20, 25]
+
+# # Define parameter values
+# sources = ["foursquare"]
+# min_retail_in_cell_values = [1, 2, 3]
+# min_retail_in_island_values = [ 10, 15]
+# min_retail_in_network_values = [10, 15, 20, 25]
+
+sources = ["foursquare"]
+min_retail_in_cell_values = [2,3,4,5]
+min_retail_in_island_values = [10]
+min_retail_in_network_values = [10,15,20]
+min_to_fill = [4,7]
+merge_adjacent = [True, False]
 
 
 # Generate all parameter combinations
@@ -78,6 +108,8 @@ param_combinations = itertools.product(
     min_retail_in_cell_values,
     min_retail_in_island_values,
     min_retail_in_network_values,
+    min_to_fill,
+    merge_adjacent
 )
 
 # Convert to a list once for both counting and iteration
@@ -93,12 +125,9 @@ foursquare = pl.read_parquet(
 )
 overture = pl.read_parquet("data/input_files/poi_uk_overture_proc.parquet")
 
-foursquare = foursquare.filter(
-    (foursquare["level1_category_name"] == "Retail")
-    | (foursquare["level1_category_name"] == "Dining and Drinking")
-    | (foursquare["level1_category_name"] == "Arts and Entertainment")
-    | (foursquare["level1_category_name"] == "Sports and Recreation")
-)
+
+foursquare = ut.filter_foursquare(foursquare)
+
 overture = overture.filter(
     (overture["level1_category_name"] == "retail")
     | (overture["level1_category_name"] == "eat_and_drink")
@@ -127,15 +156,20 @@ for idx, (
     min_retail_in_cell,
     min_retail_in_island,
     min_retail_in_network,
+    min_to_fill,
+    merge_adjacent
 ) in enumerate(param_combinations_list, start=1):
     print(f"Processing combination {idx} of {total_combos}")
     print(
-        f"Parameters: source={source}, min_cell={min_retail_in_cell}, min_island={min_retail_in_island}, min_network={min_retail_in_network}"
+        f"Parameters: source={source}, min_cell={min_retail_in_cell}, min_island={min_retail_in_island}, min_network={min_retail_in_network}, min_to_fill={min_to_fill}"
     )
-    generate_networks(
+
+    generate_networks_mergefirst(
         combined,
         source=source,
         min_retail_in_cell=min_retail_in_cell,
         min_retail_in_island=min_retail_in_island,
         min_retail_in_network=min_retail_in_network,
+        min_to_fill=min_to_fill,
+        merge_adjacent=merge_adjacent
     )
