@@ -4,6 +4,8 @@ import geopandas as gpd
 import utils as ut
 import itertools
 import network_merger
+import retailfilter
+import os
 
 
 def generate_networks_mergefirst(
@@ -15,18 +17,26 @@ def generate_networks_mergefirst(
     min_to_fill=5,
     merge_adjacent=True
 ):
-
+    merge_flag = "y" if merge_adjacent else "n"
+    folder_name = f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_mtf_{min_to_fill}_merge_{merge_flag}"
+    print(f"Processing {folder_name}")
+    #create folder if it doesn't exist
+    os.makedirs(f"data/output_files/{folder_name}", exist_ok=True)
+    save_folder = f"data/output_files/{folder_name}"
     input_cells = combined.filter(
         (pl.col(f"{source}_count") >= min_retail_in_cell)
         | (pl.col("retail_landuse") == True)
     )
 
+    input_cells.write_parquet(
+        save_folder+"/0_input_cells.parquet"
+    )
     # Example usage
     cells_with_network = ut.create_networks(input_cells)
 
     ut.to_parquet(
         cells_with_network,
-        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}",
+        save_folder+"/1_intial_networks.parquet"
     )
 
     if merge_adjacent:
@@ -56,18 +66,17 @@ def generate_networks_mergefirst(
 
     ut.to_parquet(
         filt_cells_with_network,
-        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_merge_{merge_adjacent}",
+        save_folder+"/2_merged_filtered_networks.parquet",
     )
 
     #if min_to_fill is 7, we don't fill any cells
     if min_to_fill < 7:
-        
         filt_cells_with_network = network_merger.fill_until_no_new_cells(filt_cells_with_network, min_neighbours=min_to_fill)
         filt_cells_with_network = ut.join_networks_with_cells(filt_cells_with_network, input_cells) #add the retail count to the network
 
     ut.to_parquet(
         filt_cells_with_network,
-        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_mrt_{min_to_fill}_filled_merge_{merge_adjacent}",
+        save_folder+"/3_afterfill.parquet",
     )
     filt_cells_with_network = ut.to_geoframe(filt_cells_with_network)
     dissolved = filt_cells_with_network.dissolve(
@@ -77,13 +86,12 @@ def generate_networks_mergefirst(
     dissolved["geometry"] = dissolved["geometry"].apply(
         lambda geom: ut.fill_holes(geom)
     )
-
     # Final GeoDataFrame with dissolved unique polygons
     dissolved_unique_gdf = gpd.GeoDataFrame(
         dissolved, geometry="geometry", crs="EPSG:27700"
     )
     dissolved_unique_gdf.to_parquet(
-        f"data/output_files/retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_mtf_{min_to_fill}_dissolved_merged_{merge_adjacent}.parquet"
+        save_folder+"/4_finalcentres.parquet",
     )
 
 
@@ -95,11 +103,11 @@ def generate_networks_mergefirst(
 # min_retail_in_network_values = [10, 15, 20, 25]
 
 sources = ["foursquare"]
-min_retail_in_cell_values = [2,3,4,5]
+min_retail_in_cell_values = [2]
 min_retail_in_island_values = [10]
-min_retail_in_network_values = [10,15,20]
-min_to_fill = [4,7]
-merge_adjacent = [True, False]
+min_retail_in_network_values = [10]
+min_to_fill = [6]
+merge_adjacent = [False]
 
 
 # Generate all parameter combinations
@@ -126,7 +134,7 @@ foursquare = pl.read_parquet(
 overture = pl.read_parquet("data/input_files/poi_uk_overture_proc.parquet")
 
 
-foursquare = ut.filter_foursquare(foursquare)
+foursquare = retailfilter.filter_foursquare(foursquare)
 
 overture = overture.filter(
     (overture["level1_category_name"] == "retail")
@@ -142,11 +150,13 @@ overture = overture.filter(
 foursquare = ut.add_h3_11_column(foursquare)
 overture = ut.add_h3_11_column(overture)
 
-foursquare_cells = ut.agg_to_cells(foursquare)
+foursquare_cells = ut.agg_to_cells_foursquare(foursquare)
 overture_cells = ut.agg_to_cells(overture)
 
+print(foursquare_cells)
 # Load land use data
 land_use_cells = pd.read_parquet("data/input_files/retail_landuse_h3.parquet")
+#
 land_use_cells = pl.DataFrame(land_use_cells)
 combined = ut.create_combined_table(foursquare_cells, overture_cells, land_use_cells)
 

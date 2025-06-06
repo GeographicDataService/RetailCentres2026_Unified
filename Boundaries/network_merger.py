@@ -9,6 +9,34 @@ import networkx as nx
 import utils as ut
 import time
 
+
+def merge_overlapping_networks(data: pl.DataFrame) -> pl.DataFrame:
+    """
+    Merges networks in the data that overlap with each other.
+
+    Args:
+        data (pl.DataFrame): A DataFrame with columns 'h3_11' (H3 addresses) 
+                             and 'network_number' (network identifiers).
+    
+    Returns:
+        pl.DataFrame: A DataFrame with merged network numbers.
+    """
+    print("Merging networks separated by one cell.")
+    print("Getting the perimeter of the networks.")
+    combined_neighbors = _get_perimeter_networks(data)
+    print("Finding overlapping networks and overlap.")
+    overlapping_pairs, new_rows = _find_overlapping_networks_and_overlap(combined_neighbors)
+
+    new_df = pl.DataFrame(new_rows)
+    # Select relevant columns and append new rows
+    data = data.select(["h3_11", "network_number"])
+    data = data.vstack(new_df)
+    # Merge overlapping networks
+    print("Merging overlapping networks.")
+    data = _merge_networks(data, overlapping_pairs)
+    return data
+
+
 def merge_networks_separated_by_one_cell(data: pl.DataFrame) -> pl.DataFrame:
     """
     Merges networks in the data that are separated by a single H3 cell.
@@ -215,9 +243,5 @@ def _merge_networks(data: pl.DataFrame, overlapping_pairs: List[Tuple[int, int]]
     print(data["network_number"].dtype)
     
     # # Apply the mapping to the network_number column
-    # data = data.to_pandas()
     data_merged = data.with_columns(pl.col("network_number").replace(network_mapping).alias("network_number"))
-    # data["network_number"] = data["network_number"].map(network_mapping).fillna(data["network_number"])
-    # print(data["network_number"].dtype)
-    # return pl.from_pandas(data)
     return data_merged
