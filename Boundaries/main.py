@@ -1,12 +1,20 @@
 import polars as pl
 import pandas as pd
+import numpy as np
 import geopandas as gpd
 import utils as ut
 import itertools
 import network_merger
+import find_subcentres
 import retailfilter
+import centre_postprocessing
 import os
+import random
 
+#set random seed for reproducibility (of the subnetwork finding algorithm)
+seed = 505
+random.seed(seed)        # or any integer
+np.random.seed(seed)
 
 def generate_networks_mergefirst(
     combined,
@@ -28,6 +36,10 @@ def generate_networks_mergefirst(
         | (pl.col("retail_landuse") == True)
     )
 
+
+    #only keep first 10000 cells for testing
+    input_cells = input_cells.head(10000)
+    
     input_cells.write_parquet(
         save_folder+"/0_input_cells.parquet"
     )
@@ -78,7 +90,28 @@ def generate_networks_mergefirst(
         filt_cells_with_network,
         save_folder+"/3_afterfill.parquet",
     )
+
+
+
+    ##run the subnetwork finding algorithm
+    # We use the find_subcentres function to find subcentres in the network
+    filt_cells_with_network= find_subcentres.run_leiden_clustering_polars(
+        filt_cells_with_network,
+        res=0.15,
+        alpha=0,
+        seed=505)
+    
+    filt_cells_with_network = find_subcentres.split_networks_with_poi_threshold_polars(
+        filt_cells_with_network, count_threshold=1000
+    )
+    #recalculate the total_foursquare_count and trackNodes for each network
+    filt_cells_with_network = ut.join_networks_with_cells(
+        filt_cells_with_network, input_cells
+    )  # add the retail count to the network
+
+
     filt_cells_with_network = ut.to_geoframe(filt_cells_with_network)
+
     dissolved = filt_cells_with_network.dissolve(
         by="network_number", as_index=False
     ).reset_index(drop=True)
@@ -86,11 +119,34 @@ def generate_networks_mergefirst(
     dissolved["geometry"] = dissolved["geometry"].apply(
         lambda geom: ut.fill_holes(geom)
     )
+
+
     # Final GeoDataFrame with dissolved unique polygons
-    dissolved_unique_gdf = gpd.GeoDataFrame(
+    dissolved_gdf = gpd.GeoDataFrame(
         dissolved, geometry="geometry", crs="EPSG:27700"
     )
-    dissolved_unique_gdf.to_parquet(
+
+    #drop cell related columns
+    dissolved_gdf = dissolved_gdf[["network_number", "geometry","total_foursquare_count","trackNodes"]]
+
+    #replace network number with rank based on total_foursquare_count
+    dissolved_gdf["network_number"] = (
+        dissolved_gdf["total_foursquare_count"]
+        .rank(method="first", ascending=False)
+        .astype(int)
+    )
+    dissolved_gdf = dissolved_gdf.rename(
+        columns={
+            "network_number": "RC_ID",
+            "total_foursquare_count": "POI_count",
+            "trackNodes": "trackNodes"
+        }
+    )
+    ##post processing
+    dissolved_gdf = centre_postprocessing.add_localauthorities_to_centres(
+        dissolved_gdf
+    )
+    dissolved_gdf.to_parquet(
         save_folder+"/4_finalcentres.parquet",
     )
 
@@ -153,9 +209,8 @@ overture = ut.add_h3_11_column(overture)
 foursquare_cells = ut.agg_to_cells_foursquare(foursquare)
 overture_cells = ut.agg_to_cells(overture)
 
-print(foursquare_cells)
 # Load land use data
-land_use_cells = pd.read_parquet("data/input_files/retail_landuse_h3.parquet")
+land_use_cells = pd.read_parquet("data/input_files/retail_landuse_h3_geo.parquet")
 #
 land_use_cells = pl.DataFrame(land_use_cells)
 combined = ut.create_combined_table(foursquare_cells, overture_cells, land_use_cells)
