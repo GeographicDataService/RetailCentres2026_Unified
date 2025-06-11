@@ -23,10 +23,11 @@ def generate_networks_mergefirst(
     min_retail_in_island=10,
     min_retail_in_network=15,
     min_to_fill=5,
+    split_threshold=0,
     merge_adjacent=True
 ):
     merge_flag = "y" if merge_adjacent else "n"
-    folder_name = f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_mtf_{min_to_fill}_merge_{merge_flag}"
+    folder_name = f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}_merge_{merge_flag}"
     print(f"Processing {folder_name}")
     #create folder if it doesn't exist
     os.makedirs(f"data/output_files/{folder_name}", exist_ok=True)
@@ -37,9 +38,9 @@ def generate_networks_mergefirst(
     )
 
 
-    #only keep first 10000 cells for testing
-    input_cells = input_cells.head(10000)
-    
+    # #only keep first 10000 cells for testing
+    # input_cells = input_cells.head(10000)
+
     input_cells.write_parquet(
         save_folder+"/0_input_cells.parquet"
     )
@@ -90,7 +91,12 @@ def generate_networks_mergefirst(
         filt_cells_with_network,
         save_folder+"/3_afterfill.parquet",
     )
-
+    #print number of networks
+    print(f"Number of networks after filtering: {filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
+    #save the polars dataframe to a parquet file
+    filt_cells_with_network.write_parquet(
+        save_folder+"/3_afterfill_pl.parquet",
+    )
 
 
     ##run the subnetwork finding algorithm
@@ -100,15 +106,21 @@ def generate_networks_mergefirst(
         res=0.15,
         alpha=0,
         seed=505)
-    
+    #number of networks after subnetwork finding
+    print(f"Number of networks after subnetwork finding: {filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
+    #number of subcentres
+    print(f"Number of subcentres: {filt_cells_with_network.select(pl.col('subcentre').n_unique()).to_numpy()[0][0]}")
     filt_cells_with_network = find_subcentres.split_networks_with_poi_threshold_polars(
-        filt_cells_with_network, count_threshold=1000
-    )
+        filt_cells_with_network, count_threshold=split_threshold)
+    
+    #number of networks after subnetwork finding
+    print(f"Number of networks after subnetwork finding with poi threshold: {filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
     #recalculate the total_foursquare_count and trackNodes for each network
     filt_cells_with_network = ut.join_networks_with_cells(
         filt_cells_with_network, input_cells
     )  # add the retail count to the network
-
+    #number of networks after recalculating the total_foursquare_count and trackNodes
+    print(f"Number of networks after recalculating total_foursquare_count and trackNodes: {filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
 
     filt_cells_with_network = ut.to_geoframe(filt_cells_with_network)
 
@@ -139,15 +151,20 @@ def generate_networks_mergefirst(
         columns={
             "network_number": "RC_ID",
             "total_foursquare_count": "POI_count",
-            "trackNodes": "trackNodes"
+            "trackNodes": "# H3 cells",
         }
     )
-    ##post processing
-    dissolved_gdf = centre_postprocessing.add_localauthorities_to_centres(
-        dissolved_gdf
-    )
+
+
     dissolved_gdf.to_parquet(
         save_folder+"/4_finalcentres.parquet",
+    )
+    ##post processing
+    dissolved_gdf_las = centre_postprocessing.add_localauthorities_to_centres(
+        dissolved_gdf
+    )
+    dissolved_gdf_las.to_parquet(
+        save_folder+"/4_finalcentres_las.parquet",
     )
 
 
@@ -163,6 +180,7 @@ min_retail_in_cell_values = [2]
 min_retail_in_island_values = [10]
 min_retail_in_network_values = [10]
 min_to_fill = [6]
+split_threshold = [0]  # Threshold for splitting networks based on POI count
 merge_adjacent = [False]
 
 

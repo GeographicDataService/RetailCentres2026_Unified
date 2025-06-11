@@ -135,11 +135,13 @@ def run_leiden_clustering_polars(retail_centres: pl.DataFrame, alpha: float, res
     df = retail_centres.with_columns([
         pl.col(poi_cols).fill_null(0)
     ])
-    
+    #print numbrt of networks
+    print(f"Number of networks before clustering: {df.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
     poi_matrix = normalize(df.select(poi_cols).to_numpy(), norm='l2', axis=1)
     df = df.with_columns([
         pl.Series(name='poi_vec', values=poi_matrix.tolist())
     ])
+    print(f"Number of networks after adding poi_vec: {df.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
 
     # Rank networks by size
     network_counts = (
@@ -148,13 +150,15 @@ def run_leiden_clustering_polars(retail_centres: pl.DataFrame, alpha: float, res
         .value_counts()
         .sort('count', descending=True)
         .with_columns([
-            pl.col('counts').rank(method='ordinal').cast(pl.Int32)
+            pl.col('count').rank(method='ordinal').cast(pl.Int32).alias('rank'),
         ])
-        .rename({'network_number': 'original_network_number', 'counts': 'network_number'})
+        .rename({'network_number': 'original_network_number', 'rank': 'network_number'})
     )
 
     df = df.join(network_counts, on='network_number', how='left')
-    df = df.drop('network_number').rename({'original_network_number': 'network_number'})
+    print(f"Number of networks after ranking: {df.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
+    # df = df.drop('network_number').rename({'original_network_number': 'network_number'})
+    # print(f"Number of networks after dropping original_network_number: {df.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
 
     all_clustered = []
 
@@ -206,7 +210,7 @@ def run_leiden_clustering_polars(retail_centres: pl.DataFrame, alpha: float, res
             membership = partition.membership
             h3_to_cluster = {h3_nodes[i]: f"{network_number}_{membership[i]}" for i in range(len(h3_nodes))}
             rc = rc.with_columns([
-                pl.col('h3_11').map_elements(lambda h: h3_to_cluster[h]).alias('subcentre')
+                pl.col('h3_11').replace_strict(h3_to_cluster).alias('subcentre')
             ])
         else:
             rc = rc.with_columns([
@@ -227,10 +231,12 @@ def split_networks_with_poi_threshold_polars(df: pl.DataFrame, count_threshold: 
     over_threshold = (
         df.select(['network_number', 'total_foursquare_count'])
         .unique()
-        .filter(pl.col('total_foursquare_count') > count_threshold)
-        ['network_number']
+        .filter(pl.col('total_foursquare_count') >= count_threshold)
+        .select(pl.col('network_number').cast(pl.Utf8))
+        .to_series()
         .to_list()
     )
+
 
     df = df.with_columns([
         pl.when(pl.col('original_network_number').is_in(over_threshold))

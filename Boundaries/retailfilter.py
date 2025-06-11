@@ -1,9 +1,10 @@
-import polars as pl
 import argparse
-from shapely.geometry import Polygon, MultiPolygon
-import networkx as nx
-from collections import defaultdict
-from itertools import combinations
+import polars as pl
+import geopandas as gpd
+import pandas as pd
+from shapely.geometry import Point
+from pathlib import Path
+import utils as ut  # Make sure this is your utility module with add_h3_11_column()
 
 def filter_foursquare(foursquare):
     foursquare = foursquare.filter(
@@ -99,20 +100,44 @@ def filter_foursquare(foursquare):
 
 # Add the main block
 if __name__ == "__main__":
-    # Set up argument parsing
-    parser = argparse.ArgumentParser(description="Filter Foursquare data based on categories.")
+
+    COLUMNS_TO_KEEP = [
+        "fsq_place_id", "name", "lat", "lng", "address", "locality", "region",
+        "postcode", "admin_region", "post_town", "po_box", "country",
+        "date_created", "date_refreshed", "date_closed", "tel", "website","fsq_category_ids", "fsq_category_labels",
+        "h3_11"  # Added here
+    ]
+    parser = argparse.ArgumentParser(description="Convert Foursquare data with H3 to GeoParquet.")
     parser.add_argument("input_file", help="Path to the input Parquet file.")
-    
-    # Parse arguments
     args = parser.parse_args()
-    
-    # Load the Parquet file
-    foursquare_data = pl.read_parquet(args.input_file)
 
-    # Apply the filtering function
-    filtered_foursquare = filter_foursquare(foursquare_data)
+    # Load Parquet using Polars
+    fsq_data = pl.read_parquet(args.input_file)
 
-    # Save the output with the name appended "_retailfilt"
-    output_file = args.input_file.replace(".parquet", "_retailfilt.parquet")
-    filtered_foursquare.write_parquet(output_file)
-    print(f"Filtered data saved to {output_file}")
+    # Add H3 column FIRST
+    fsq_data = ut.add_h3_11_column(fsq_data)
+
+    # Optional filtering (if desired)
+    fsq_data = filter_foursquare(fsq_data)
+
+    # Keep only necessary columns
+    fsq_data = fsq_data.select(COLUMNS_TO_KEEP)
+
+    # Convert to Pandas DataFrame
+    fsq_df = fsq_data.to_pandas()
+
+    # Create geometry from lat/lng
+    fsq_df["geometry"] = [
+        Point(xy) if pd.notnull(xy[0]) and pd.notnull(xy[1]) else None
+        for xy in zip(fsq_df["lng"], fsq_df["lat"])
+    ]
+    fsq_df = fsq_df[fsq_df["geometry"].notnull()]
+
+    # Convert to GeoDataFrame
+    gdf = gpd.GeoDataFrame(fsq_df, geometry="geometry", crs="EPSG:4326")
+
+    # Prepare output filename
+    output_path = Path(args.input_file).with_stem(Path(args.input_file).stem + "_retailfilt_geo")
+    gdf.to_parquet(output_path)
+    print(f"✅ Saved GeoDataFrame with H3 to {output_path}")
+
