@@ -1,0 +1,24 @@
+[project]
+name = "retailcentres"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "community>=1.0.0b1",
+    "contextily>=1.6.2",
+    "geopandas>=1.0.1",
+    "h3>=4.2.2",
+    "igraph>=0.11.8",
+    "leidenalg>=0.10.2",
+    "libpysal>=4.13.0",
+    "networkx>=3.4.2",
+    "osmnx>=2.0.3",
+    "pandas>=2.2.3",
+    "pip>=25.0.1",
+    "polars>=1.26.0",
+    "pyarrow>=19.0.1",
+    "scikit-learn>=1.6.1",
+    "spopt>=0.6.1",
+    "tqdm>=4.67.1",
+]
