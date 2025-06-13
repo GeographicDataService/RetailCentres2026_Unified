@@ -1,6 +1,10 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+
 import polars as pl
 import pytest
-from utils import join_networks_with_cells
+from utils.utils import join_networks_with_cells
 from polars.testing import assert_frame_equal
 
 def test_join_networks_with_cells():

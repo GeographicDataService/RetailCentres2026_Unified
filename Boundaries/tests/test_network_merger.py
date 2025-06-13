@@ -1,9 +1,12 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 import pytest
 import polars as pl
+from retail.network_merger import merge_networks_separated_by_one_cell
+from retail.network_merger import _find_overlapping_networks_and_overlap
 from polars.testing import assert_frame_equal
-from network_merger import merge_networks_separated_by_one_cell
-from network_merger import _find_overlapping_networks_and_overlap
 
 
 #8b2b996b26f2fff, 8b2b996b26f0fff, 8b2b996b26f3fff, 8b2b996b26e6fff, 8b2b996b2653fff

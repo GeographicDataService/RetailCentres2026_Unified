@@ -8,7 +8,7 @@ def convert_geoparquet(input_path, output_format="shapefile", output_path=None):
     gdf = gpd.read_parquet(input_path)
 
     # Prepare output directory
-    output_dir = Path("data/forarcgis")
+    output_dir = Path("../../data/forarcgis")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     input_stem = Path(input_path).stem  # e.g. 'myfile' from 'myfile.parquet'

@@ -6,7 +6,7 @@ import polars as pl
 import h3
 from typing import Dict, Set, Tuple, List
 import networkx as nx
-import utils as ut
+from utils import utils as ut
 import time
 
 

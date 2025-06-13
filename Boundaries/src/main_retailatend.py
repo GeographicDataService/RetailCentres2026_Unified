@@ -1,9 +1,9 @@
 import polars as pl
 import pandas as pd
 import geopandas as gpd
-import utils as ut
+from utils import utils as ut
 import itertools
-import network_merger
+from retail import network_merger
 import os
 
 

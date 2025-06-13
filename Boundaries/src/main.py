@@ -2,12 +2,12 @@ import polars as pl
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-import utils as ut
+from utils import utils as ut
 import itertools
-import network_merger
-import find_subcentres
-import retailfilter
-import centre_postprocessing
+from retail import network_merger
+from retail import find_subcentres
+from retail import retailfilter
+from retail import centre_postprocessing
 import os
 import random
 

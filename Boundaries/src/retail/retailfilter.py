@@ -4,7 +4,7 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 from pathlib import Path
-import utils as ut  # Make sure this is your utility module with add_h3_11_column()
+from utils import utils as ut
 
 def filter_foursquare(foursquare):
     foursquare = foursquare.filter(
