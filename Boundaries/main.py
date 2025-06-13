@@ -25,7 +25,7 @@ def generate_networks_mergefirst(
     min_to_fill=5,
     split_threshold=0,
     merge_adjacent=True
-):
+):  
     merge_flag = "y" if merge_adjacent else "n"
     folder_name = f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}_merge_{merge_flag}"
     print(f"Processing {folder_name}")
@@ -191,6 +191,7 @@ param_combinations = itertools.product(
     min_retail_in_island_values,
     min_retail_in_network_values,
     min_to_fill,
+    split_threshold,
     merge_adjacent
 )
 
@@ -240,11 +241,12 @@ for idx, (
     min_retail_in_island,
     min_retail_in_network,
     min_to_fill,
+    split_threshold,
     merge_adjacent
 ) in enumerate(param_combinations_list, start=1):
     print(f"Processing combination {idx} of {total_combos}")
     print(
-        f"Parameters: source={source}, min_cell={min_retail_in_cell}, min_island={min_retail_in_island}, min_network={min_retail_in_network}, min_to_fill={min_to_fill}"
+        f"Parameters: source={source}, min_cell={min_retail_in_cell}, min_island={min_retail_in_island}, min_network={min_retail_in_network}, min_to_fill={min_to_fill}, split_threshold={split_threshold}, merge_adjacent={merge_adjacent}"
     )
 
     generate_networks_mergefirst(
@@ -254,5 +256,6 @@ for idx, (
         min_retail_in_island=min_retail_in_island,
         min_retail_in_network=min_retail_in_network,
         min_to_fill=min_to_fill,
+        split_threshold=split_threshold,
         merge_adjacent=merge_adjacent
     )
