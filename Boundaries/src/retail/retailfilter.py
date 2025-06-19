@@ -1,3 +1,4 @@
+import os
 import argparse
 import polars as pl
 import geopandas as gpd
@@ -12,7 +13,7 @@ def filter_foursquare(foursquare):
         | (foursquare["level1_category_name"] == "Dining and Drinking")
         | (foursquare["level1_category_name"] == "Arts and Entertainment")
         | (foursquare["level1_category_name"] == "Sports and Recreation")
-        | (foursquare["level2_category_name"] == "Health and Beauty Service")  # business
+        | (foursquare["level2_category_name"] == "Health and Beauty Service") #business
         | (foursquare["level2_category_name"] == "Automotive Service")  # business
         # | (foursquare["level3_category_name"] == "ATM") # business, financial service
         | (foursquare["level4_category_name"] == "Bank") # business, financial service
@@ -46,9 +47,13 @@ def filter_foursquare(foursquare):
     )
 
     # Accounting, mental health service, charities are a bit of a mess.
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    print(f"Base directory: {base_dir}")
+    # Build the absolute path to the CSV file
+    csv_path = os.path.join(base_dir, "../../data/POI_files/alex_filter.csv")
 
-    # load alex's filter
-    cats = pl.read_csv("data/POI_files/alex_filter.csv")
+    # Read the CSV
+    cats = pl.read_csv(csv_path)
     # set the nulls in the remove column to 0
     cats = cats.with_columns(
         pl.col("Remove").fill_null(0).cast(pl.Int64)
@@ -98,6 +103,21 @@ def filter_foursquare(foursquare):
     
     return foursquare
 
+
+def filter_overture(overture):
+    overture = overture.filter(
+        (overture["level1_category_name"] == "retail")
+        | (overture["level1_category_name"] == "eat_and_drink")
+        | (overture["level1_category_name"] == "beauty_and_spa")
+        | (overture["level1_category_name"] == "arts_and_entertainment")
+        | (overture["level2_category_name"] == "activate_life")
+        | (overture["level1_category_name"] == "automotive")
+        | (overture["level2_category_name"] == "art_gallery")
+        | (overture["level2_category_name"] == "museum")
+    )
+    return overture
+# Import necessary libraries
+
 # Add the main block
 if __name__ == "__main__":
 
@@ -135,6 +155,10 @@ if __name__ == "__main__":
 
     # Convert to GeoDataFrame
     gdf = gpd.GeoDataFrame(fsq_df, geometry="geometry", crs="EPSG:4326")
+
+    #print full list of unique fsq_category_labels (sorted) to csv
+    unique_categories = gdf["fsq_category_labels"].unique().sort_values()
+    unique_categories.to_csv("data/POI_files/fsq_unique_categories.csv", index=False)
 
     # Prepare output filename
     output_path = Path(args.input_file).with_stem(Path(args.input_file).stem + "_retailfilt_geo")
