@@ -22,7 +22,7 @@ def generate_networks(
     """
     merge_flag = "y" if merge_adjacent else "n"
     folder_name = (
-        f"retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
+        f"newfilpo_retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
         f"mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}"
         f"_merge_{merge_flag}"
     )
