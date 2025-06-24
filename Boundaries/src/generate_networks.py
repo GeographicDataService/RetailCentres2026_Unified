@@ -6,6 +6,7 @@ from utils import utils as ut
 from retail import network_merger
 from retail import find_subcentres
 from retail import centre_postprocessing
+from retail import manual_edits
 
 def generate_networks(
     combined: pl.DataFrame,
@@ -30,11 +31,26 @@ def generate_networks(
     os.makedirs(f"data/output_files/{folder_name}", exist_ok=True)
     save_folder = f"data/output_files/{folder_name}"
 
+
+    combined  = manual_edits.add_cells_manually(combined)
+    combined = manual_edits.flag_manually_removed_cells(combined)
+
+    input_cells2 = combined.filter(
+        (pl.col(f"{source}_count") >= min_retail_in_cell)
+        | (pl.col("retail_landuse")) )
     input_cells = combined.filter(
         (pl.col(f"{source}_count") >= min_retail_in_cell)
-        | (pl.col("retail_landuse") == True)
-    )
+        | (pl.col("retail_landuse")) | (pl.col("manually_added")))
 
+    print("Number of cells added manually: ", input_cells2.shape[0] - input_cells.shape[0])
+
+
+    #not running this for now, 3 cases from before seem fine already (Brighton Exact split there by algo, Norwich Already split normally, London Islington/Highbury splits are a bit diiferent 
+    #but reasonable, also putting the manual split forces the north half of hackney not to split (below threshold, not ideal)
+    # print(f"Number of input cells after removing manually removed: {input_cells.filter(pl.col("manually_removed")).shape[0]}")
+    # #filter out any manually removed cells and count them
+    # input_cells = input_cells.filter(~pl.col("manually_removed"))
+    
     input_cells.write_parquet(f"{save_folder}/0_input_cells.parquet")
     cells_with_network = ut.create_networks(input_cells)
     ut.to_parquet(cells_with_network, f"{save_folder}/1_intial_networks.parquet")
@@ -76,6 +92,11 @@ def generate_networks(
     )
 
     filt_cells_with_network.write_parquet(f"{save_folder}/3_afterfill_pl.parquet")
+
+
+    #Manual Edits
+    #Re
+
 
     filt_cells_with_network = find_subcentres.run_leiden_clustering_polars(
         filt_cells_with_network, res=0.15, alpha=0, seed=505

@@ -55,7 +55,7 @@ def filter_foursquare(foursquare):
 
     #remove some which pass the higher level
     foursquare = foursquare.filter(
-        (foursquare["level2_category_name"].is_null()) | 
+        (foursquare["level2_category_name"].is_null()) | #important to keep this, otherwise we lose some categories
         (   #arts and entertainment
             (foursquare["level2_category_name"] != "Amusement Park") & 
             (foursquare["level2_category_name"] != "Disc Golf") & 
@@ -75,7 +75,13 @@ def filter_foursquare(foursquare):
     )
     print(f"Filtered Foursquare data: {foursquare.shape[0]} rows remaining.")    
     # Accounting, mental health service, charities are a bit of a mess.
-  
+    #remove any with a "Post Box" as name
+    foursquare = foursquare.filter(~pl.col("name").is_in(["Post Box", "Postbox", "Post box"]))
+
+    #count how many removed
+    removed_count =  foursquare.filter(pl.col("name").is_in(["Post Box", "Postbox", "Post box"])).shape[0]
+    if removed_count > 0:
+        print(f"Removed {removed_count} rows with 'Post Box' as name.")
     # remove any with a date closed
     foursquare = foursquare.filter(foursquare["date_closed"].is_null())
     # remove any with same name and lat lng (some have multiple categories)
