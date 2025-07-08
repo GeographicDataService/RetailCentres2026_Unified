@@ -7,6 +7,20 @@ from shapely.geometry import Point
 from pathlib import Path
 from utils import utils as ut
 
+
+# Make sure NLTK names are available
+import nltk
+nltk.download('names')
+
+# Preload British names once
+BRITISH_NAMES = set(nltk.corpus.names.words())
+
+def is_just_british_name(name: str, british_names: set) -> bool:
+    tokens = name.strip().title().split()
+    return len(tokens) == 2 and all(token in british_names for token in tokens)
+
+
+
 def filter_foursquare(foursquare):
     foursquare = foursquare.filter(
         (foursquare["level1_category_name"] == "Retail")
@@ -14,7 +28,6 @@ def filter_foursquare(foursquare):
         | (foursquare["level1_category_name"] == "Arts and Entertainment")
         # | (foursquare["level1_category_name"] == "Sports and Recreation")
         | (foursquare["level2_category_name"] == "Health and Beauty Service") #business
-        | (foursquare["level2_category_name"] == "Automotive Service")  # business
         # | (foursquare["level3_category_name"] == "ATM") # business, financial service
         | (foursquare["level4_category_name"] == "Bank") # business, financial service
         | (foursquare["level3_category_name"] == "Credit Union") # business, financial service
@@ -22,7 +35,7 @@ def filter_foursquare(foursquare):
         | (foursquare["level3_category_name"] == "Law Office") 
         | (foursquare["level3_category_name"] == "Loans Agency") # business, financial service
         # | (foursquare["level3_category_name"] == "Insurance Agency") # business, financial service
-        | (foursquare["level2_category_name"] == "Computer Repair Service") # business
+        # | (foursquare["level2_category_name"] == "Computer Repair Service") # business
         | (foursquare["level2_category_name"] == "Pet Service") # business
         | (foursquare["level2_category_name"] == "Photography Service") # business
         | (foursquare["level2_category_name"] == "Locksmith") # business
@@ -64,10 +77,12 @@ def filter_foursquare(foursquare):
             (foursquare["level2_category_name"] != "Exhibit") &
             (foursquare["level2_category_name"] != "Fair") &
             (foursquare["level2_category_name"] != "Stadium") &
-            #business
-            (foursquare["level2_category_name"] != "Automotive Service")
+            (foursquare["level2_category_name"] != "Museum") &
+            (foursquare["level2_category_name"] != "Zoo") &
+            # #business
+            # (foursquare["level2_category_name"] != "Automotive Service")
             #dining and drinking
-            & (foursquare["level2_category_name"] != "Vineyard") &
+            (foursquare["level2_category_name"] != "Vineyard") &
             #retail
             (foursquare["level2_category_name"] != "Auction House") &
             (foursquare["level2_category_name"] != "Construction Supplies Store")
@@ -83,7 +98,26 @@ def filter_foursquare(foursquare):
     if removed_count > 0:
         print(f"Removed {removed_count} rows with 'Post Box' as name.")
     # remove any with a date closed
-    foursquare = foursquare.filter(foursquare["date_closed"].is_null())
+
+       # Identify rows where name is just a British name
+# Apply the function to create a boolean mask
+    # foursquare = foursquare.with_columns([
+    #     pl.col("name").map_elements(lambda x: is_just_british_name(str(x), BRITISH_NAMES)).alias("is_name_only")
+    # ])
+
+    # # Split into removed and cleaned
+    # print(len(foursquare))
+    # removed_df = foursquare.filter((pl.col("is_name_only")) & (pl.col("level1_category_name") == "Business and Professional Services"))
+    # foursquare = foursquare.filter(~pl.col("is_name_only") | (pl.col("level1_category_name") != "Business and Professional Services"))
+  
+    # # Save removed names to Parquet
+    # if removed_df.height > 0:
+
+    #     removed_df.write_parquet("data/POI_files/removed_british_names.parquet")
+    #     print(f"Removed {removed_df.height} rows where name was just a British name. Saved to data/POI_files/removed_british_names.parquet")
+
+    # Filter for open locations
+    foursquare = foursquare.filter(pl.col("date_closed").is_null())
     # remove any with same name and lat lng (some have multiple categories)
     foursquare = foursquare.unique(subset=["name","lat","lng"])
     

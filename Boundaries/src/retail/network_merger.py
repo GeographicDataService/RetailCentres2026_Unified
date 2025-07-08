@@ -37,30 +37,98 @@ def merge_overlapping_networks(data: pl.DataFrame) -> pl.DataFrame:
     return data
 
 
+# def merge_networks_separated_by_one_cell(data: pl.DataFrame) -> pl.DataFrame:
+#     """
+#     Merges networks in the data that are separated by a single H3 cell.
+
+#     Args:
+#         data (pl.DataFrame): A DataFrame with columns 'h3_11', 'network_number', and 'trackNodes'.
+
+#     Returns:
+#         pl.DataFrame: A DataFrame with merged network numbers.
+#     """
+#     print("Merging networks separated by one cell.")
+#     print("Getting the perimeter of the networks.")
+
+#     combined_neighbors = _get_perimeter_networks(data)
+#     print("Finding overlapping networks and overlap.")
+#     overlapping_pairs, new_rows = _find_overlapping_networks_and_overlap(combined_neighbors)
+#     print(len(overlapping_pairs))
+#     print(len(new_rows))
+#     print("Checking trackNodes threshold for overlapping pairs.")
+#     valid_pairs = []
+#     valid_networks = set()
+
+#     for net1, net2 in overlapping_pairs:
+#         tn1 = data.filter(pl.col("network_number") == net1)["trackNodes"][0]
+#         tn2 = data.filter(pl.col("network_number") == net2)["trackNodes"][0]
+#         if tn1 < 10 or tn2 < 10:
+#             valid_pairs.append((net1, net2))
+#             valid_networks.update([net1, net2])
+
+#     if not valid_pairs:
+#         print("No valid network pairs to merge under the trackNodes threshold.")
+#         return data.select(["h3_11", "network_number"])
+
+#     print("Filtering new rows to keep only valid networks.")
+#     filtered_rows = [row for row in new_rows if row["network_number"] in valid_networks]
+
+#     new_df = pl.DataFrame(filtered_rows)
+#     data = data.select(["h3_11", "network_number"])
+#     data = data.vstack(new_df)
+
+#     print("Merging overlapping networks.")
+#     data = _merge_networks(data, valid_pairs)
+#     return data
+
 def merge_networks_separated_by_one_cell(data: pl.DataFrame) -> pl.DataFrame:
     """
     Merges networks in the data that are separated by a single H3 cell.
 
     Args:
-        data (pl.DataFrame): A DataFrame with columns 'h3_11' (H3 addresses) 
-                             and 'network_number' (network identifiers).
-    
+        data (pl.DataFrame): A DataFrame with columns 'h3_11', 'network_number', and 'trackNodes'.
+
     Returns:
         pl.DataFrame: A DataFrame with merged network numbers.
     """
     print("Merging networks separated by one cell.")
     print("Getting the perimeter of the networks.")
+
     combined_neighbors = _get_perimeter_networks(data)
     print("Finding overlapping networks and overlap.")
-    overlapping_pairs, new_rows = _find_overlapping_networks_and_overlap(combined_neighbors)
+    overlap_by_pair = get_overlap_hexes_by_pair(combined_neighbors)
+    print(f"{len(overlap_by_pair)} overlapping pairs found.")
+
+    print("Checking trackNodes threshold for overlapping pairs.")
+    valid_pairs = []
+    valid_networks = set()
+
+    for (net1, net2), hexes in overlap_by_pair.items():
+        tn1 = data.filter(pl.col("network_number") == net1)["trackNodes"][0]
+        tn2 = data.filter(pl.col("network_number") == net2)["trackNodes"][0]
+        if tn1 <= 10 or tn2 <= 10:
+            valid_pairs.append((net1, net2))
+            valid_networks.update([net1, net2])
+
+    if not valid_pairs:
+        print("No valid network pairs to merge under the trackNodes threshold.")
+        return data.select(["h3_11", "network_number"])
+
+    print("Building new rows from valid overlaps.")
+    new_rows = []
+    for (net1, net2), hexes in overlap_by_pair.items():
+        if (net1, net2) in valid_pairs:
+            for h in hexes:
+                new_rows.extend([
+                    {"h3_11": h, "network_number": net1},
+                ])
 
     new_df = pl.DataFrame(new_rows)
-    # Select relevant columns and append new rows
     data = data.select(["h3_11", "network_number"])
     data = data.vstack(new_df)
-    # Merge overlapping networks
+
     print("Merging overlapping networks.")
-    data = _merge_networks(data, overlapping_pairs)
+    data = _merge_networks(data, valid_pairs)
     return data
 
 
@@ -188,17 +256,19 @@ def _find_overlapping_networks_and_overlap( #O(n*log(n))
     
     # Find overlaps using the reverse index
     for hex_val, networks in hex_to_networks.items():
+        if len(networks) > 2:
+            print(f"Warning: Hex {hex_val} overlaps with 3 networks: {networks}. This is rare and may lead to unexpected behaviour in the merging algorithm.")
+            print("In particular if a threshold is applied to the number of trackNodes, this may lead to two networks being seperate but not spatially connected")
+            print("Disable this break to continue processing, but be aware of the implications.")
         # If a hex appears in multiple networks
         if len(networks) > 1:
             # Generate all unique network pairs
             network_pairs = list(combinations(sorted(networks), 2))
-            
             # Maintain order and avoid duplicates
             for pair in network_pairs:
                 if pair not in unique_overlapping_pairs:
                     unique_overlapping_pairs.add(pair)
                     overlapping_pairs.append(pair)
-            
             # Add only one new row per hex (using the first network)
             first_network = min(networks)
             new_rows.append({"h3_11": hex_val, "network_number": int(first_network)})
@@ -206,18 +276,32 @@ def _find_overlapping_networks_and_overlap( #O(n*log(n))
     return overlapping_pairs, new_rows
 
 
-def original_find_overlapping_networks_and_overlap( #O(n^2)
-    combined_neighbors: Dict[int, Set[str]]
-) -> Tuple[List[Tuple[int, int]], List[Dict[str, int]]]:
-    overlapping_pairs = []
-    new_rows = []
-    for (network1, neighbors1), (network2, neighbors2) in combinations(combined_neighbors.items(), 2):
-        overlap = neighbors1 & neighbors2
-        if overlap:
-            overlapping_pairs.append((network1, network2))
-            new_rows.extend({"h3_11": hex, "network_number": int(network1)} for hex in overlap)
-    return overlapping_pairs, new_rows
+from itertools import combinations
+from typing import Dict, Set, Tuple, DefaultDict
+from collections import defaultdict
 
+def get_overlap_hexes_by_pair(
+    combined_neighbors: Dict[int, Set[str]]
+) -> Dict[Tuple[int, int], Set[str]]:
+    # Map each hex to the set of networks it's in
+    hex_to_networks: Dict[str, Set[int]] = {}
+    for network_id, hexes in combined_neighbors.items():
+        for h in hexes:
+            hex_to_networks.setdefault(h, set()).add(network_id)
+
+    # Now map overlapping pairs to the set of hexes they share
+    overlaps_by_pair: DefaultDict[Tuple[int, int], Set[str]] = defaultdict(set)
+
+    for hex_id, networks in hex_to_networks.items():
+        if len(networks) > 2:
+            print(f"Warning: Hex {hex_id} is in {len(networks)} networks: {networks}")
+
+        if len(networks) > 1:
+            # For each unique pair of networks that share this hex
+            for pair in combinations(sorted(networks), 2):
+                overlaps_by_pair[pair].add(hex_id)
+
+    return dict(overlaps_by_pair)
 
 def _merge_networks(data: pl.DataFrame, overlapping_pairs: List[Tuple[int, int]]) -> pl.DataFrame:
     """

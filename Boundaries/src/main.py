@@ -21,7 +21,7 @@ min_retail_in_island_values = [10]
 min_retail_in_network_values = [10]
 min_to_fill = [6]
 split_threshold = [1500]  # Threshold for splitting networks based on POI count
-merge_adjacent = [False]
+merge_adjacent = [True]
 
 
 # Generate all parameter combinations

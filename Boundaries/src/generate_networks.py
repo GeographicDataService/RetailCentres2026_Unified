@@ -13,7 +13,7 @@ def generate_networks(
     source: str = "foursquare",
     min_retail_in_cell: int = 2,
     min_retail_in_island: int = 10,
-    min_retail_in_network: int = 15,
+    min_retail_in_network: int = 10,
     min_to_fill: int = 5,
     split_threshold: int = 0,
     merge_adjacent: bool = True
@@ -23,7 +23,7 @@ def generate_networks(
     """
     merge_flag = "y" if merge_adjacent else "n"
     folder_name = (
-        f"newfilpo_retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
+        f"mergeafterfiltthresh_retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
         f"mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}"
         f"_merge_{merge_flag}"
     )
@@ -55,14 +55,6 @@ def generate_networks(
     cells_with_network = ut.create_networks(input_cells)
     ut.to_parquet(cells_with_network, f"{save_folder}/1_intial_networks.parquet")
 
-    if merge_adjacent:
-        cells_with_network = network_merger.merge_networks_separated_by_one_cell(
-            cells_with_network
-        )
-        cells_with_network = ut.join_networks_with_cells(
-            cells_with_network, input_cells
-        )
-
     filt_cells_with_network = cells_with_network.filter(
         (
             (cells_with_network[f"total_{source}_count"] >= min_retail_in_island)
@@ -71,6 +63,14 @@ def generate_networks(
         & (cells_with_network[f"total_{source}_count"] >= min_retail_in_network)
     ).sort("network_number")
 
+    if merge_adjacent:
+        filt_cells_with_network = network_merger.merge_networks_separated_by_one_cell(
+            filt_cells_with_network
+        )
+        filt_cells_with_network = ut.join_networks_with_cells(
+            filt_cells_with_network, input_cells
+        )
+    
     ut.to_parquet(
         filt_cells_with_network,
         f"{save_folder}/2_merged_filtered_networks.parquet",
