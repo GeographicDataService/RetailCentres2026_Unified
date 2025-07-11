@@ -18,8 +18,9 @@ np.random.seed(seed)
 sources = ["foursquare"]
 min_retail_in_cell_values = [2]
 min_retail_in_island_values = [1]
-min_retail_in_network_values = [5,10,15]
+min_retail_in_network_values = [10]
 min_to_fill = [6]
+# split_threshold = [1500,9999999]  # Threshold for splitting networks based on POI count
 split_threshold = [1500,9999999]  # Threshold for splitting networks based on POI count
 merge_adjacent = [True]
 

@@ -26,7 +26,7 @@ def run_leiden_clustering(retail_centres, alpha, res, seed=42):
     """
 
         # Normalize POI vectors to unit length (row-wise L2 norm)
-    poi_cols = ['Dining and Drinking' , 'Leisure & Travel', 'Community & Health','Commerce']
+    poi_cols = ['Dining and Drinking' , 'Leisure & Travel', 'Community & Health','Retail']
     retail_centres[poi_cols] = retail_centres[poi_cols].fill_nan(0)
     poi_matrix = normalize(retail_centres[poi_cols].values, norm='l2', axis=1)
     retail_centres['poi_vec'] = poi_matrix.tolist()
@@ -131,7 +131,7 @@ def split_networks_with_poi_threshold(gdf: gpd.GeoDataFrame, count_threshold: in
     return gdf
 
 def run_leiden_clustering_polars(retail_centres: pl.DataFrame, alpha: float, res: float, seed: int = 42) -> pl.DataFrame:
-    poi_cols = ['Dining and Drinking', 'Leisure & Travel', 'Community & Health', 'Commerce']
+    poi_cols = ['Dining and Drinking', 'Leisure & Travel', 'Community & Health', 'Retail']
     df = retail_centres.with_columns([
         pl.col(poi_cols).fill_null(0)
     ])

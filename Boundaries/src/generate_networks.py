@@ -35,14 +35,14 @@ def generate_networks(
     combined  = manual_edits.add_cells_manually(combined)
     combined = manual_edits.flag_manually_removed_cells(combined)
 
-    input_cells2 = combined.filter(
+    input_cells_not_manual = combined.filter(
         (pl.col(f"{source}_count") >= min_retail_in_cell)
         | (pl.col("retail_landuse")) )
     input_cells = combined.filter(
         (pl.col(f"{source}_count") >= min_retail_in_cell)
         | (pl.col("retail_landuse")) | (pl.col("manually_added")))
 
-    print("Number of cells added manually: ", input_cells2.shape[0] - input_cells.shape[0])
+    print("Number of cells added manually: ", input_cells_not_manual.shape[0] - input_cells.shape[0])
 
 
     #not running this for now, 3 cases from before seem fine already (Brighton Exact split there by algo, Norwich Already split normally, London Islington/Highbury splits are a bit diiferent 
@@ -127,14 +127,18 @@ def generate_networks(
     )
 
     filt_cells_with_network = ut.to_geoframe(filt_cells_with_network)
-    dissolved = filt_cells_with_network.dissolve(by="network_number", as_index=False)
+
+    dissolved = ut.dissolve_to_centres(filt_cells_with_network)
+
+    # dissolved = filt_cells_with_network.dissolve(by="network_number", as_index=False, aggfunc="sum")
     dissolved["geometry"] = dissolved["geometry"].apply(lambda geom: ut.fill_holes(geom))
 
     dissolved_gdf = gpd.GeoDataFrame(
         dissolved, geometry="geometry", crs="EPSG:27700"
     )
     dissolved_gdf = dissolved_gdf[
-        ["network_number", "geometry", f"total_{source}_count", "trackNodes"]
+        ["network_number", "geometry", f"total_{source}_count", "trackNodes",'Retail',
+       'Dining and Drinking', 'Leisure & Travel', 'Community & Health','category_names']
     ]
     dissolved_gdf["network_number"] = (
         dissolved_gdf[f"total_{source}_count"]
@@ -144,7 +148,7 @@ def generate_networks(
     dissolved_gdf = dissolved_gdf.rename(
         columns={
             "network_number": "RC_ID",
-            f"total_{source}_count": "POI_count",
+            f"total_{source}_count": "Total_POI_count",
             "trackNodes": "# H3 cells",
         }
     )

@@ -5,7 +5,7 @@ import geopandas as gpd
 from shapely.geometry import Polygon, MultiPolygon
 import networkx as nx
 from collections import defaultdict
-from itertools import combinations
+from itertools import combinations, chain
 
 
 def to_geoframe(df):
@@ -46,19 +46,23 @@ def agg_to_cells(df: pl.DataFrame) -> pl.DataFrame:
 def agg_to_cells_foursquare(df: pl.DataFrame, threshold: float = 0.5) -> pl.DataFrame:
     # Map original categories to aggregated super-groups, except keep Dining and Drinking unchanged
     category_map = {
-        "Retail": "Commerce",
-        "Business and Professional Services": "Commerce",
+        "Retail": "Retail",
+        "Business and Professional Services": "Retail",
         "Dining and Drinking": "Dining and Drinking",
         "Sports and Recreation": "Leisure & Travel",
         "Arts and Entertainment": "Leisure & Travel",
         "Travel and Transportation": "Leisure & Travel",
         "Community and Government": "Community & Health",
         "Health and Medicine": "Community & Health"
-    }    # convert to pandas Series, map, then back to polars Series
+    }
+
+    # category_map = {}
+
+    # Map level1 categories to aggregated categories
     agg_category_pd = df["level1_category_name"].to_pandas().map(category_map).fillna(df["level1_category_name"].to_pandas())
     agg_category_pl = pl.Series("agg_category", agg_category_pd)
-    
     df = df.with_columns([agg_category_pl])
+
     # Count total rows per h3_11
     base = df.group_by("h3_11").agg(pl.len().alias("retail_count"))
 
@@ -68,7 +72,7 @@ def agg_to_cells_foursquare(df: pl.DataFrame, threshold: float = 0.5) -> pl.Data
         .agg(pl.len().alias("count"))
     )
 
-    # Pivot for wide format (optional)
+    # Pivot for wide format
     category_counts = (
         category_counts_long
         .pivot(values="count", index="h3_11", columns="agg_category")
@@ -98,12 +102,31 @@ def agg_to_cells_foursquare(df: pl.DataFrame, threshold: float = 0.5) -> pl.Data
         .with_columns(pl.col("dominant_type").fill_null("mixed"))
     )
 
+    # NEW: Add list of unique level 2 (or fallback to level 1) categories per h3_11
+    unique_level2 = (
+        df.with_columns(
+            pl.when(pl.col("level2_category_name").is_not_null())
+            .then(pl.col("level2_category_name"))
+            .otherwise(pl.col("level1_category_name"))
+            .alias("effective_level2")
+        )
+        .group_by("h3_11")
+        .agg(pl.col("effective_level2").unique().alias("level2_categories"))
+    )
+    # NEW: Add list of unique category_name values per h3_11
+    unique_category = (
+        df.group_by("h3_11")
+        .agg(pl.col("category_name").unique().alias("category_names"))
+    )
+
     # Join everything together
     return (
         base
         .join(category_counts, on="h3_11", how="left")
         .join(top_category, on="h3_11", how="left")
         .join(dominant_type, on="h3_11", how="left")
+        .join(unique_level2, on="h3_11", how="left")
+        .join(unique_category, on="h3_11", how="left")
     )
 
 
@@ -228,3 +251,38 @@ def fill_holes(geometry, threshold = 2000 * 1e6):
     elif isinstance(geometry, MultiPolygon):
         return MultiPolygon([fill_holes(p, threshold) for p in geometry.geoms])
     return geometry
+
+def dissolve_to_centres(df):
+    
+    # Your custom aggregation for list of strings
+    def merge_unique_lists(series):
+        clean_series = [x for x in series if x is not None] #celss added by manual edits, landuse, etc
+        return list(set(chain.from_iterable(clean_series)))
+
+    # Columns to aggregate
+    sum_cols = [
+        'foursquare_count', 'Retail', 'Dining and Drinking',
+        'Leisure & Travel', 'Community & Health', 'overture_count'
+    ]
+    first_cols = ['total_overture_count', 'total_foursquare_count', 'trackNodes']
+    list_cols = ['level2_categories', 'category_names']
+
+    # Define aggregation dictionary
+    aggfunc = {col: 'sum' for col in sum_cols}
+    aggfunc.update({col: 'first' for col in first_cols})
+    aggfunc.update({col: merge_unique_lists for col in list_cols})
+    # Drop unwanted columns first
+    cols_to_drop = [
+        'h3_11', 'top_category', 'dominant_type', 'retail_landuse',
+        'manually_added', 'manually_removed'
+    ]
+    df_cleaned = df.drop(columns=cols_to_drop)
+
+    # Dissolve
+    dissolved = df_cleaned.dissolve(
+        by='network_number',
+        aggfunc=aggfunc,
+        as_index=False
+    )
+
+    return dissolved
