@@ -67,8 +67,6 @@ def add_cells_manually(df: pl.DataFrame) -> pl.DataFrame:
     # Flatten the list of lists into a single list of H3 cells
     manual_h3s = [h3 for sublist in manual_h3_groups for h3 in sublist]
 
-    print(f"Adding {len(manual_h3s)} manually defined H3 cells.")
-
     # Create a DataFrame with just the manually added cells
     manual_cells_df = pl.DataFrame(
         {
@@ -76,9 +74,6 @@ def add_cells_manually(df: pl.DataFrame) -> pl.DataFrame:
             "manually_added": [True] * len(manual_h3s),
         }
     )
-
-    # # Add manually_added column to existing df (False by default)
-    # df = df.with_columns(pl.lit(False).alias("manually_added"))
 
     # Join and coalesce to preserve existing data
     df = df.join(manual_cells_df, on="h3_11", how="full", coalesce=True)
@@ -96,10 +91,7 @@ def add_cells_manually(df: pl.DataFrame) -> pl.DataFrame:
     # Report stats
     n_new = df.filter(pl.col("manually_added") & ~pl.col("h3_11").is_in(df["h3_11"])).height
     n_existing = df.filter(pl.col("manually_added") & pl.col("h3_11").is_in(df["h3_11"])).height
-
-    print(f"Already in dataframe: {n_existing}")
-    print(f"New cells added: {n_new}")
-
+    print(f"Number of new cells added manually: {n_new}, Number of existing cells flagged as mannually added: {n_existing}")
     return df
 
 

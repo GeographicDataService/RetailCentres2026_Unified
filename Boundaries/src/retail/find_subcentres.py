@@ -135,13 +135,11 @@ def run_leiden_clustering_polars(retail_centres: pl.DataFrame, alpha: float, res
     df = retail_centres.with_columns([
         pl.col(poi_cols).fill_null(0)
     ])
-    #print numbrt of networks
-    print(f"Number of networks before clustering: {df.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
+
     poi_matrix = normalize(df.select(poi_cols).to_numpy(), norm='l2', axis=1)
     df = df.with_columns([
         pl.Series(name='poi_vec', values=poi_matrix.tolist())
     ])
-    print(f"Number of networks after adding poi_vec: {df.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
 
     # Rank networks by size
     network_counts = (
@@ -154,14 +152,9 @@ def run_leiden_clustering_polars(retail_centres: pl.DataFrame, alpha: float, res
         ])
         .rename({'network_number': 'original_network_number', 'rank': 'network_number'})
     )
-
     df = df.join(network_counts, on='network_number', how='left')
-    print(f"Number of networks after ranking: {df.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
-    # df = df.drop('network_number').rename({'original_network_number': 'network_number'})
-    # print(f"Number of networks after dropping original_network_number: {df.select(pl.col('network_number').n_unique()).to_numpy()[0][0]}")
 
     all_clustered = []
-
     for network_number in tqdm(df.select('network_number').unique()['network_number'].to_list(), desc=f"Alpha={alpha}, Res={res}"):
         rc = df.filter(pl.col('network_number') == network_number)
 
@@ -183,8 +176,8 @@ def run_leiden_clustering_polars(retail_centres: pl.DataFrame, alpha: float, res
             for n in sorted(h3.grid_ring(h, 1)):
                 if n in h3_set and not G.has_edge(h, n):
                     sim = np.dot(poi_lookup[h], poi_lookup[n])
-                    if sim == 0:
-                        sim = 0.025
+                    if sim == 0: 
+                        sim = 0.025 # small value to avoid zero similarity
                     d1, d2 = density_lookup[h], density_lookup[n]
                     density_weight = d1 + d2 + 1
                     weight = alpha * sim + (1 - alpha) * density_weight
