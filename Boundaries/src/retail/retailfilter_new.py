@@ -88,16 +88,12 @@ def filter_foursquare(foursquare):
             (foursquare["level2_category_name"] != "Construction Supplies Store")
         )
     )
-    print(f"Filtered Foursquare data: {foursquare.shape[0]} rows remaining.")    
+    print(f"Filtered Foursquare data (Retail Cats): {foursquare.shape[0]} rows remaining.")    
     # Accounting, mental health service, charities are a bit of a mess.
     #remove any with a "Post Box" as name
     foursquare = foursquare.filter(~pl.col("name").is_in(["Post Box", "Postbox", "Post box"]))
 
-    #count how many removed
-    removed_count =  foursquare.filter(pl.col("name").is_in(["Post Box", "Postbox", "Post box"])).shape[0]
-    if removed_count > 0:
-        print(f"Removed {removed_count} rows with 'Post Box' as name.")
-    # remove any with a date closed
+    print(f"Filtered Foursquare data (remove post box): {foursquare.shape[0]} rows remaining.")   
 
        # Identify rows where name is just a British name
 # Apply the function to create a boolean mask
@@ -118,9 +114,15 @@ def filter_foursquare(foursquare):
 
     # Filter for open locations
     foursquare = foursquare.filter(pl.col("date_closed").is_null())
+    print(f"Filtered Foursquare data (remove closed): {foursquare.shape[0]} rows remaining.")   
     # remove any with same name and lat lng (some have multiple categories)
     foursquare = foursquare.unique(subset=["name","lat","lng"])
-    
+
+    # print(f"Filtered Foursquare data (remove cat dupes): {foursquare.shape[0]} rows remaining.")   
+
+    # #remove anything with a date refreshed before 2020
+    # foursquare = foursquare.filter(pl.col("date_refreshed") >= "2020-01-01")
+    # print(f"Filtered Foursquare data (date refreshed): {foursquare.shape[0]} rows remaining.")
     return foursquare
 
 

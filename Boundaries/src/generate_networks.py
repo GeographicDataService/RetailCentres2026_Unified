@@ -10,6 +10,7 @@ from retail import manual_edits
 
 def generate_networks(
     combined: pl.DataFrame,
+    run_name: str,
     source: str = "foursquare",
     min_retail_in_cell: int = 2,
     min_retail_in_island: int = 10,
@@ -27,7 +28,7 @@ def generate_networks(
     # ----------------------------------------
     merge_flag = "y" if merge_adjacent else "n"
     folder_name = (
-        f"mergeafterfiltthresh_retailcen_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
+        f"{run_name}_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
         f"mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}"
         f"_merge_{merge_flag}"
     )
