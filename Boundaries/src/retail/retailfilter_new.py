@@ -48,7 +48,7 @@ def filter_foursquare(foursquare):
         | (foursquare["level2_category_name"] == "Travel Agency") # transport
         | (foursquare["level2_category_name"] == "Tourist Information and Service") # transport (covers tourist info shops and some travel agencies)
         # medical 
-        | (foursquare["level3_category_name"] == "Doctors Office") # most GPs
+        | (foursquare["level3_category_name"] == "Doctor's Office") # most GPs
         | (foursquare["level2_category_name"] == "Dentist") # dentists
         | (foursquare["level2_category_name"] == "Veterinarian") # vets
         | (foursquare["level2_category_name"] == "Physical Therapy Clinic") # physio
@@ -89,6 +89,8 @@ def filter_foursquare(foursquare):
         )
     )
     print(f"Filtered Foursquare data (Retail Cats): {foursquare.shape[0]} rows remaining.")    
+
+
     # Accounting, mental health service, charities are a bit of a mess.
     #remove any with a "Post Box" as name
     foursquare = foursquare.filter(~pl.col("name").is_in(["Post Box", "Postbox", "Post box"]))
