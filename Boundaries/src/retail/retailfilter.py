@@ -7,14 +7,27 @@ from shapely.geometry import Point
 from pathlib import Path
 from utils import utils as ut
 
+
+# Make sure NLTK names are available
+import nltk
+nltk.download('names')
+
+# Preload British names once
+BRITISH_NAMES = set(nltk.corpus.names.words())
+
+def is_just_british_name(name: str, british_names: set) -> bool:
+    tokens = name.strip().title().split()
+    return len(tokens) == 2 and all(token in british_names for token in tokens)
+
+
+
 def filter_foursquare(foursquare):
     foursquare = foursquare.filter(
         (foursquare["level1_category_name"] == "Retail")
         | (foursquare["level1_category_name"] == "Dining and Drinking")
         | (foursquare["level1_category_name"] == "Arts and Entertainment")
-        | (foursquare["level1_category_name"] == "Sports and Recreation")
+        # | (foursquare["level1_category_name"] == "Sports and Recreation")
         | (foursquare["level2_category_name"] == "Health and Beauty Service") #business
-        | (foursquare["level2_category_name"] == "Automotive Service")  # business
         # | (foursquare["level3_category_name"] == "ATM") # business, financial service
         | (foursquare["level4_category_name"] == "Bank") # business, financial service
         | (foursquare["level3_category_name"] == "Credit Union") # business, financial service
@@ -22,12 +35,12 @@ def filter_foursquare(foursquare):
         | (foursquare["level3_category_name"] == "Law Office") 
         | (foursquare["level3_category_name"] == "Loans Agency") # business, financial service
         # | (foursquare["level3_category_name"] == "Insurance Agency") # business, financial service
-        | (foursquare["level2_category_name"] == "Computer Repair Service") # business
+        # | (foursquare["level2_category_name"] == "Computer Repair Service") # business
         | (foursquare["level2_category_name"] == "Pet Service") # business
         | (foursquare["level2_category_name"] == "Photography Service") # business
         | (foursquare["level2_category_name"] == "Locksmith") # business
         | (foursquare["level2_category_name"] == "Funeral Home") # business
-        | (foursquare["level3_category_name"] == "Coworking Space") # business, office
+        # | (foursquare["level3_category_name"] == "Coworking Space") # business, office
         | (foursquare["level2_category_name"] == "Laundry Service") # business
         | (foursquare["level2_category_name"] == "Laundromat") # business
         # transport
@@ -35,7 +48,7 @@ def filter_foursquare(foursquare):
         | (foursquare["level2_category_name"] == "Travel Agency") # transport
         | (foursquare["level2_category_name"] == "Tourist Information and Service") # transport (covers tourist info shops and some travel agencies)
         # medical 
-        | (foursquare["level3_category_name"] == "Doctors Office") # most GPs
+        | (foursquare["level3_category_name"] == "Doctor's Office") # most GPs
         | (foursquare["level2_category_name"] == "Dentist") # dentists
         | (foursquare["level2_category_name"] == "Veterinarian") # vets
         | (foursquare["level2_category_name"] == "Physical Therapy Clinic") # physio
@@ -44,64 +57,237 @@ def filter_foursquare(foursquare):
         | (foursquare["level2_category_name"] == "Library") # community
         | (foursquare["level2_category_name"] == "Community Center") # community
         | (foursquare["level2_category_name"] == "Social Club") # community
+        #sports
+        | (foursquare["level2_category_name"] == "Gym and Studio") # gyms
+        | (foursquare["level2_category_name"] == "Indoor Play Area") 
+        | (foursquare["level2_category_name"] == "Martial Arts Dojo") 
+        | (foursquare["level4_category_name"] == "Swimming Pool") # sports
+
     )
+
+
+    #remove some which pass the higher level
+    foursquare = foursquare.filter(
+        (foursquare["level2_category_name"].is_null()) | #important to keep this, otherwise we lose some categories
+        (   #arts and entertainment
+            (foursquare["level2_category_name"] != "Amusement Park") & 
+            (foursquare["level2_category_name"] != "Disc Golf") & 
+            (foursquare["level2_category_name"] != "Disc Golf Course") & 
+            (foursquare["level2_category_name"] != "Auction House") &
+            (foursquare["level2_category_name"] != "Exhibit") &
+            (foursquare["level2_category_name"] != "Fair") &
+            (foursquare["level2_category_name"] != "Stadium") &
+            (foursquare["level2_category_name"] != "Museum") &
+            (foursquare["level2_category_name"] != "Zoo") &
+            # #business
+            # (foursquare["level2_category_name"] != "Automotive Service")
+            #dining and drinking
+            (foursquare["level2_category_name"] != "Vineyard") &
+            #retail
+            (foursquare["level2_category_name"] != "Auction House") &
+            (foursquare["level2_category_name"] != "Construction Supplies Store")
+        )
+    )
+    print(f"Filtered Foursquare data (Retail Cats): {foursquare.shape[0]} rows remaining.")    
+
 
     # Accounting, mental health service, charities are a bit of a mess.
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    print(f"Base directory: {base_dir}")
-    # Build the absolute path to the CSV file
-    csv_path = os.path.join(base_dir, "../../data/POI_files/alex_filter.csv")
+    #remove any with a "Post Box" as name
+    foursquare = foursquare.filter(~pl.col("name").is_in(["Post Box", "Postbox", "Post box"]))
 
-    # Read the CSV
-    cats = pl.read_csv(csv_path)
-    # set the nulls in the remove column to 0
-    cats = cats.with_columns(
-        pl.col("Remove").fill_null(0).cast(pl.Int64)
-    )
-    cats = cats.filter(~(cats["Remove"] == 1))
+    print(f"Filtered Foursquare data (remove post box): {foursquare.shape[0]} rows remaining.")   
 
-    def filter_matching_categories(data_df, reference_df):
-        """
-        Filter rows in data_df where the category hierarchy matches one from reference_df,
-        considering null values as valid matches when they appear in both DataFrames.
-        """
-        category_cols = [
-            'level1_category_name',
-            'level2_category_name',
-            'level3_category_name',
-            'level4_category_name'
-        ]
-        
-        # Create an expression that matches categories including nulls
-        conditions = []
-        
-        for col in category_cols:
-            # A category matches if either:
-            # 1. Both values are null, or
-            # 2. The value exists in the reference DataFrame for this column
-            condition = (
-                (pl.col(col).is_null() & pl.lit(reference_df[col].null_count() > 0)) |
-                pl.col(col).is_in(reference_df.select(col).filter(pl.col(col).is_not_null()).unique())
-            )
-            conditions.append(condition)
-        
-        # Combine all conditions with AND
-        final_condition = conditions[0]
-        for cond in conditions[1:]:
-            final_condition = final_condition & cond
-        
-        # Apply the filter
-        result = data_df.filter(final_condition)
-        
-        return result
+       # Identify rows where name is just a British name
+# Apply the function to create a boolean mask
+    # foursquare = foursquare.with_columns([
+    #     pl.col("name").map_elements(lambda x: is_just_british_name(str(x), BRITISH_NAMES)).alias("is_name_only")
+    # ])
 
-    foursquare = filter_matching_categories(foursquare, cats)
-    # remove any with a date closed
-    foursquare = foursquare.filter(foursquare["date_closed"].is_null())
+    # # Split into removed and cleaned
+    # print(len(foursquare))
+    # removed_df = foursquare.filter((pl.col("is_name_only")) & (pl.col("level1_category_name") == "Business and Professional Services"))
+    # foursquare = foursquare.filter(~pl.col("is_name_only") | (pl.col("level1_category_name") != "Business and Professional Services"))
+  
+    # # Save removed names to Parquet
+    # if removed_df.height > 0:
+
+    #     removed_df.write_parquet("data/POI_files/removed_british_names.parquet")
+    #     print(f"Removed {removed_df.height} rows where name was just a British name. Saved to data/POI_files/removed_british_names.parquet")
+
+    # Filter for open locations
+    foursquare = foursquare.filter(pl.col("date_closed").is_null())
+    print(f"Filtered Foursquare data (remove closed): {foursquare.shape[0]} rows remaining.")   
     # remove any with same name and lat lng (some have multiple categories)
     foursquare = foursquare.unique(subset=["name","lat","lng"])
-    
+
+    print(f"Filtered Foursquare data (remove cat dupes): {foursquare.shape[0]} rows remaining.")
+
+    # #remove anything with a date refreshed before 2020
+    # foursquare = foursquare.filter(pl.col("date_refreshed") >= "2020-01-01")
+    # print(f"Filtered Foursquare data (date refreshed): {foursquare.shape[0]} rows remaining.")
     return foursquare
+
+
+def filter_foursquare_invmethod(foursquare):
+    foursquare_filt = foursquare.filter(
+        (foursquare["level1_category_name"] == "Retail")
+        | (foursquare["level1_category_name"] == "Dining and Drinking")
+        | (foursquare["level1_category_name"] == "Arts and Entertainment")
+        # | (foursquare["level1_category_name"] == "Sports and Recreation")
+        | (foursquare["level2_category_name"] == "Health and Beauty Service") #business
+        # | (foursquare["level3_category_name"] == "ATM") # business, financial service
+        | (foursquare["level4_category_name"] == "Bank") # business, financial service
+        | (foursquare["level3_category_name"] == "Credit Union") # business, financial service
+        | (foursquare["level3_category_name"] == "Real Estate Agency") # business, real estate service
+        | (foursquare["level3_category_name"] == "Law Office") 
+        | (foursquare["level3_category_name"] == "Loans Agency") # business, financial service
+        # | (foursquare["level3_category_name"] == "Insurance Agency") # business, financial service
+        # | (foursquare["level2_category_name"] == "Computer Repair Service") # business
+        | (foursquare["level2_category_name"] == "Pet Service") # business
+        | (foursquare["level2_category_name"] == "Photography Service") # business
+        | (foursquare["level2_category_name"] == "Locksmith") # business
+        | (foursquare["level2_category_name"] == "Funeral Home") # business
+        # | (foursquare["level3_category_name"] == "Coworking Space") # business, office
+        | (foursquare["level2_category_name"] == "Laundry Service") # business
+        | (foursquare["level2_category_name"] == "Laundromat") # business
+        # transport
+        | (foursquare["level2_category_name"] == "Fuel Station") # transport
+        | (foursquare["level2_category_name"] == "Travel Agency") # transport
+        | (foursquare["level2_category_name"] == "Tourist Information and Service") # transport (covers tourist info shops and some travel agencies)
+        # medical 
+        | (foursquare["level3_category_name"] == "Doctor's Office") # most GPs
+        | (foursquare["level2_category_name"] == "Dentist") # dentists
+        | (foursquare["level2_category_name"] == "Veterinarian") # vets
+        | (foursquare["level2_category_name"] == "Physical Therapy Clinic") # physio
+        # community
+        | (foursquare["level3_category_name"] == "Post Office") # community
+        | (foursquare["level2_category_name"] == "Library") # community
+        | (foursquare["level2_category_name"] == "Community Center") # community
+        | (foursquare["level2_category_name"] == "Social Club") # community
+        #sports
+        | (foursquare["level2_category_name"] == "Gym and Studio") # gyms
+        | (foursquare["level2_category_name"] == "Indoor Play Area") 
+        | (foursquare["level2_category_name"] == "Martial Arts Dojo") 
+        | (foursquare["level4_category_name"] == "Swimming Pool") # sports
+    )
+
+
+    # Define categories to exclude with their level
+    categories_to_exclude_higherlevelinc = [
+        ("level2_category_name", "Amusement Park"),
+        ("level2_category_name", "Disc Golf"),
+        ("level2_category_name", "Disc Golf Course"),
+        ("level2_category_name", "Go Kart Track"),
+        ("level2_category_name", "Auction House"),
+        ("level2_category_name", "Exhibit"),
+        ("level2_category_name", "Psychic and Astrologer"),
+        ("level2_category_name","Carnival"),
+        ("level2_category_name","Circus"),
+
+        ("level2_category_name", "Fair"),
+        ("level2_category_name", "Stadium"),
+        ("level2_category_name", "Museum"),
+        ("level2_category_name", "Zoo"),
+        ("level2_category_name", "Aquarium"),
+        ("level2_category_name", "Vineyard"),
+        ("level2_category_name", "Construction Supplies Store"),
+        # #new ones
+        ("level3_category_name", "Photographer"),
+        ("level3_category_name", "Photography Studio"),
+        ("level3_category_name", "Photography Lab"),
+      
+    ]
+
+    #by association / confusion
+    categories_to_exclude_byassociation = [
+        #Public Art
+        ("level2_category_name", "Public Art"),
+
+        #Ad agencies (often get included with Print Shop retail category)
+        ("level2_category_name", "Advertising Agency"),
+
+        #Car Dealership and Car Dealerships
+        ("level3_category_name", "Car Dealership"),
+        ("level3_category_name", "Motorcycle Dealership"),
+
+        #Real Estate Development and Title Company" #gets included with Real Estate Agency
+        ("level3_category_name", "Real Estate Development and Title Company"),
+        #Commercial Real Estate Developer
+        ("level3_category_name", "Commercial Real Estate Developer")
+
+    ]
+
+    categories_to_exclude = categories_to_exclude_higherlevelinc + categories_to_exclude_byassociation
+
+    # Build filter condition for any excluded category at any level
+    exclude_condition = pl.lit(False)
+    for col_name, category in categories_to_exclude:
+        exclude_condition = exclude_condition | (pl.col(col_name) == category)
+
+    #this has to run on the full foursquare, not the filtered one as these cats wont pass the filter but they are secondary cats on some POIs
+    #add a check that each of these actually catches some POIs
+    for col_name, category in categories_to_exclude:
+        count = foursquare.filter(pl.col(col_name) == category).height
+        if count == 0:
+            #throw error
+            raise ValueError(f"No POIs found for excluded category '{category}' in column '{col_name}'")
+            
+
+    # Get POI IDs that have any of the excluded categories
+    pois_to_exclude = (
+        foursquare
+        .filter(exclude_condition)
+        .select("fsq_place_id")
+        .unique()
+    )
+
+    # Remove all rows for those POIs
+    foursquare_filt = foursquare_filt.join(
+        pois_to_exclude,
+        on="fsq_place_id",
+        how="anti"  # Anti-join keeps rows that DON'T match
+    )
+
+    print(f"Filtered Foursquare data (Retail Cats): {foursquare_filt.shape[0]} rows remaining.")    
+
+
+    # Accounting, mental health service, charities are a bit of a mess.
+    #remove any with a "Post Box" as name
+    foursquare_filt = foursquare_filt.filter(~pl.col("name").is_in(["Post Box", "Postbox", "Post box"]))
+
+    print(f"Filtered Foursquare data (remove post box): {foursquare_filt.shape[0]} rows remaining.")
+
+       # Identify rows where name is just a British name
+# Apply the function to create a boolean mask
+    # foursquare = foursquare.with_columns([
+    #     pl.col("name").map_elements(lambda x: is_just_british_name(str(x), BRITISH_NAMES)).alias("is_name_only")
+    # ])
+
+    # # Split into removed and cleaned
+    # print(len(foursquare))
+    # removed_df = foursquare.filter((pl.col("is_name_only")) & (pl.col("level1_category_name") == "Business and Professional Services"))
+    # foursquare = foursquare.filter(~pl.col("is_name_only") | (pl.col("level1_category_name") != "Business and Professional Services"))
+  
+    # # Save removed names to Parquet
+    # if removed_df.height > 0:
+
+    #     removed_df.write_parquet("data/POI_files/removed_british_names.parquet")
+    #     print(f"Removed {removed_df.height} rows where name was just a British name. Saved to data/POI_files/removed_british_names.parquet")
+
+    # Filter for open locations
+    foursquare_filt = foursquare_filt.filter(pl.col("date_closed").is_null())
+    print(f"Filtered Foursquare data (remove closed): {foursquare_filt.shape[0]} rows remaining.")
+    # remove any with same name and lat lng (some have multiple categories)
+    foursquare_filt = foursquare_filt.unique(subset=["name","lat","lng"])
+
+
+    print(f"Filtered Foursquare data (remove cat dupes): {foursquare_filt.shape[0]} rows remaining.")   
+
+    # #remove anything with a date refreshed before 2020
+    # foursquare = foursquare.filter(pl.col("date_refreshed") >= "2020-01-01")
+    # print(f"Filtered Foursquare data (date refreshed): {foursquare.shape[0]} rows remaining.")
+    return foursquare_filt
+
 
 
 def filter_overture(overture):
