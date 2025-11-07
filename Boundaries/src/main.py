@@ -3,7 +3,7 @@ import polars as pl
 import pandas as pd
 import numpy as np
 from utils import utils as ut
-from retail import retailfilter_new as retailfilter
+from src.retail import retailfilter as retailfilter
 from generate_networks import generate_networks
 import itertools
 import random
