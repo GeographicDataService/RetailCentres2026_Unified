@@ -178,7 +178,7 @@ def filter_foursquare_invmethod(foursquare):
         ("level2_category_name", "Disc Golf"),
         ("level2_category_name", "Disc Golf Course"),
         ("level2_category_name", "Go Kart Track"),
-        ("level2_category_name", "Auction House"),
+
         ("level2_category_name", "Exhibit"),
         ("level2_category_name", "Psychic and Astrologer"),
         ("level2_category_name","Carnival"),
@@ -189,8 +189,11 @@ def filter_foursquare_invmethod(foursquare):
         ("level2_category_name", "Museum"),
         ("level2_category_name", "Zoo"),
         ("level2_category_name", "Aquarium"),
+
+        ("level2_category_name", "Auction House"),
         ("level2_category_name", "Vineyard"),
         ("level2_category_name", "Construction Supplies Store"),
+        
         # #new ones
         ("level3_category_name", "Photographer"),
         ("level3_category_name", "Photography Studio"),
@@ -251,7 +254,18 @@ def filter_foursquare_invmethod(foursquare):
     print(f"Filtered Foursquare data (Retail Cats): {foursquare_filt.shape[0]} rows remaining.")    
 
 
-    # Accounting, mental health service, charities are a bit of a mess.
+    #remove all "Warehouse or Wholesale Store" unless "Argos", others are likely storage units or B2B only
+    foursquare_filt = foursquare_filt.filter(
+        (pl.col("level2_category_name") != "Warehouse or Wholesale Store") | (pl.col("name") == "Argos")
+    )
+    print(f"Kept {foursquare_filt.filter(pl.col('level2_category_name') == 'Warehouse or Wholesale Store').shape[0]}  Argos 'Warehouse or Wholesale Store' entries after filtering.")
+    print(f"Filtered Foursquare data (remove non-Argos warehouse): {foursquare_filt.shape[0]} rows remaining.")
+
+    # find all with name containing "Costa" (case-insensitive, matches "Costa", "Costa Express", etc.)
+    foursquare_filt = foursquare_filt.filter( pl.col("name").str.contains(r"(?i)costa", literal=False) & pl.col("name").str.contains(r"(?i)express", literal=False) )
+
+    print(f"Filtered Foursquare data (find Costa Express): {foursquare_filt.shape[0]} rows remaining.")
+
     #remove any with a "Post Box" as name
     foursquare_filt = foursquare_filt.filter(~pl.col("name").is_in(["Post Box", "Postbox", "Post box"]))
 
