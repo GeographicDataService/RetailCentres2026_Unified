@@ -128,6 +128,7 @@ def filter_foursquare(foursquare):
     return foursquare
 
 
+
 def filter_foursquare_invmethod(foursquare):
     foursquare_filt = foursquare.filter(
         (foursquare["level1_category_name"] == "Retail")
@@ -193,12 +194,16 @@ def filter_foursquare_invmethod(foursquare):
         ("level2_category_name", "Auction House"),
         ("level2_category_name", "Vineyard"),
         ("level2_category_name", "Construction Supplies Store"),
+        #Malls
+        ("level2_category_name", "Outlet Mall"),
+        ("level2_category_name", "Shopping Mall"),
+        ("level2_category_name", "Shopping Plaza"),
         
         # #new ones
         ("level3_category_name", "Photographer"),
         ("level3_category_name", "Photography Studio"),
         ("level3_category_name", "Photography Lab"),
-      
+        
     ]
 
     #by association / confusion
@@ -220,38 +225,43 @@ def filter_foursquare_invmethod(foursquare):
 
     ]
 
-    categories_to_exclude = categories_to_exclude_higherlevelinc + categories_to_exclude_byassociation
-
-    # Build filter condition for any excluded category at any level
-    exclude_condition = pl.lit(False)
-    for col_name, category in categories_to_exclude:
-        exclude_condition = exclude_condition | (pl.col(col_name) == category)
-
-    #this has to run on the full foursquare, not the filtered one as these cats wont pass the filter but they are secondary cats on some POIs
-    #add a check that each of these actually catches some POIs
-    for col_name, category in categories_to_exclude:
+    # Check that all categories catch some POIs in the full dataset
+    all_categories = categories_to_exclude_higherlevelinc + categories_to_exclude_byassociation
+    for col_name, category in all_categories:
         count = foursquare.filter(pl.col(col_name) == category).height
         if count == 0:
-            #throw error
             raise ValueError(f"No POIs found for excluded category '{category}' in column '{col_name}'")
-            
+    # Filter higherlevelinc categories: remove only matching rows (keep nulls)
+    exclude_higherlevel_condition = pl.lit(False)
+    for col_name, category in categories_to_exclude_higherlevelinc:
+        # Use fill_null to treat nulls as False (i.e., don't exclude)
+        exclude_higherlevel_condition = exclude_higherlevel_condition | (
+            (pl.col(col_name) == category).fill_null(False)
+        )
 
-    # Get POI IDs that have any of the excluded categories
+    print(exclude_higherlevel_condition)
+    foursquare_filt = foursquare_filt.filter(~exclude_higherlevel_condition)
+
+    # Filter byassociation categories: remove all rows with matching POI IDs
+    exclude_byassociation_condition = pl.lit(False)
+    for col_name, category in categories_to_exclude_byassociation:
+        exclude_byassociation_condition = exclude_byassociation_condition | (pl.col(col_name) == category)
+
     pois_to_exclude = (
         foursquare
-        .filter(exclude_condition)
+        .filter(exclude_byassociation_condition)
         .select("fsq_place_id")
         .unique()
     )
 
-    # Remove all rows for those POIs
     foursquare_filt = foursquare_filt.join(
         pois_to_exclude,
         on="fsq_place_id",
-        how="anti"  # Anti-join keeps rows that DON'T match
+        how="anti"
     )
 
     print(f"Filtered Foursquare data (Retail Cats): {foursquare_filt.shape[0]} rows remaining.")    
+
 
 
     #remove all "Warehouse or Wholesale Store" unless "Argos", others are likely storage units or B2B only
@@ -261,8 +271,8 @@ def filter_foursquare_invmethod(foursquare):
     print(f"Kept {foursquare_filt.filter(pl.col('level2_category_name') == 'Warehouse or Wholesale Store').shape[0]}  Argos 'Warehouse or Wholesale Store' entries after filtering.")
     print(f"Filtered Foursquare data (remove non-Argos warehouse): {foursquare_filt.shape[0]} rows remaining.")
 
-    # find all with name containing "Costa" (case-insensitive, matches "Costa", "Costa Express", etc.)
-    foursquare_filt = foursquare_filt.filter( pl.col("name").str.contains(r"(?i)costa", literal=False) & pl.col("name").str.contains(r"(?i)express", literal=False) )
+    # find all with name containing "Costa" (case-insensitive, matches "Costa", "Costa Express", etc.) and remove 
+    foursquare_filt = foursquare_filt.filter(~(pl.col("name").str.contains(r"(?i)costa", literal=False) & pl.col("name").str.contains(r"(?i)express", literal=False) ))
 
     print(f"Filtered Foursquare data (find Costa Express): {foursquare_filt.shape[0]} rows remaining.")
 
