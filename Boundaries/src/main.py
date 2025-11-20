@@ -3,7 +3,7 @@ import polars as pl
 import pandas as pd
 import numpy as np
 from utils import utils as ut
-from src.retail import retailfilter as retailfilter
+from retail import retailfilter
 from generate_networks import generate_networks
 import itertools
 import random
@@ -57,7 +57,8 @@ print(f"Total combinations: {total_combos}")
 foursquare = pl.read_parquet(args.foursquare)
 overture = pl.read_parquet("data/input_files/poi_uk_overture_proc.parquet")
 
-foursquare = retailfilter.filter_foursquare(foursquare)
+# foursquare = retailfilter.filter_foursquare(foursquare)
+foursquare = retailfilter.filter_foursquare_invmethod(foursquare)
 overture = retailfilter.filter_overture(overture)
 
 (

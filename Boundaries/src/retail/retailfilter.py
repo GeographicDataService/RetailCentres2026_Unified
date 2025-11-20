@@ -140,7 +140,7 @@ def filter_foursquare_invmethod(foursquare):
         | (foursquare["level4_category_name"] == "Bank") # business, financial service
         | (foursquare["level3_category_name"] == "Credit Union") # business, financial service
         | (foursquare["level3_category_name"] == "Real Estate Agency") # business, real estate service
-        | (foursquare["level3_category_name"] == "Law Office") 
+        # | (foursquare["level3_category_name"] == "Law Office") 
         | (foursquare["level3_category_name"] == "Loans Agency") # business, financial service
         # | (foursquare["level3_category_name"] == "Insurance Agency") # business, financial service
         # | (foursquare["level2_category_name"] == "Computer Repair Service") # business
@@ -214,14 +214,18 @@ def filter_foursquare_invmethod(foursquare):
         #Ad agencies (often get included with Print Shop retail category)
         ("level2_category_name", "Advertising Agency"),
 
-        #Car Dealership and Car Dealerships
+        #Car Dealership and Motorcycle Dealerships
         ("level3_category_name", "Car Dealership"),
         ("level3_category_name", "Motorcycle Dealership"),
+        ("level3_category_name", "Motor Scooter Dealership"),
 
         #Real Estate Development and Title Company" #gets included with Real Estate Agency
         ("level3_category_name", "Real Estate Development and Title Company"),
         #Commercial Real Estate Developer
-        ("level3_category_name", "Commercial Real Estate Developer")
+        ("level3_category_name", "Commercial Real Estate Developer"),
+
+        #Hospital - removes some POIs included with Doctor's Office
+        ("level2_category_name", "Hospital")
 
     ]
 
@@ -238,9 +242,8 @@ def filter_foursquare_invmethod(foursquare):
         exclude_higherlevel_condition = exclude_higherlevel_condition | (
             (pl.col(col_name) == category).fill_null(False)
         )
-
-    print(exclude_higherlevel_condition)
     foursquare_filt = foursquare_filt.filter(~exclude_higherlevel_condition)
+
 
     # Filter byassociation categories: remove all rows with matching POI IDs
     exclude_byassociation_condition = pl.lit(False)
@@ -263,23 +266,27 @@ def filter_foursquare_invmethod(foursquare):
     print(f"Filtered Foursquare data (Retail Cats): {foursquare_filt.shape[0]} rows remaining.")    
 
 
-
     #remove all "Warehouse or Wholesale Store" unless "Argos", others are likely storage units or B2B only
     foursquare_filt = foursquare_filt.filter(
-        (pl.col("level2_category_name") != "Warehouse or Wholesale Store") | (pl.col("name") == "Argos")
+        (pl.col("level2_category_name") != "Warehouse or Wholesale Store").fill_null(True) | (pl.col("name") == "Argos")
     )
     print(f"Kept {foursquare_filt.filter(pl.col('level2_category_name') == 'Warehouse or Wholesale Store').shape[0]}  Argos 'Warehouse or Wholesale Store' entries after filtering.")
     print(f"Filtered Foursquare data (remove non-Argos warehouse): {foursquare_filt.shape[0]} rows remaining.")
+
+
 
     # find all with name containing "Costa" (case-insensitive, matches "Costa", "Costa Express", etc.) and remove 
     foursquare_filt = foursquare_filt.filter(~(pl.col("name").str.contains(r"(?i)costa", literal=False) & pl.col("name").str.contains(r"(?i)express", literal=False) ))
 
     print(f"Filtered Foursquare data (find Costa Express): {foursquare_filt.shape[0]} rows remaining.")
 
+    
     #remove any with a "Post Box" as name
     foursquare_filt = foursquare_filt.filter(~pl.col("name").is_in(["Post Box", "Postbox", "Post box"]))
 
     print(f"Filtered Foursquare data (remove post box): {foursquare_filt.shape[0]} rows remaining.")
+
+    
 
        # Identify rows where name is just a British name
 # Apply the function to create a boolean mask
