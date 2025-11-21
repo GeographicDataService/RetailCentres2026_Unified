@@ -720,6 +720,151 @@ def filter_business_change_pois(
     return filtered
 
 
+def filter_foreign_address_pois(
+    foursquare: pl.DataFrame,
+    save_removed: bool = True,
+    output_dir: str = "data/POI_files/foreign_addresses_removed"
+) -> pl.DataFrame:
+    """
+    Filter POIs with clearly non-UK addresses.
+
+    Detection criteria:
+    - Foreign state/province codes (US, CA, AU)
+    - OR foreign country names
+    - OR foreign postal code patterns (US, Canadian, Dutch, Irish)
+    - OR 5-digit patterns + US address keywords (Suite, Highway, Road, etc.)
+    - AND no UK postcode present (safeguard)
+    - EXCEPT Northern Ireland and UK place names (safe pass)
+
+    Parameters:
+    - foursquare: DataFrame with POI data
+    - save_removed: Whether to save removed POIs (default: True)
+    - output_dir: Directory to save removed POI files
+
+    Returns:
+    - DataFrame with foreign addresses removed
+    """
+    print(f"Filtering foreign addresses...")
+
+    initial_count = len(foursquare)
+
+    # Foreign address patterns
+    US_STATE_CODES = [
+        "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","IA","ID","IL","IN","KS","KY","LA",
+        "MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ","NM","NV","NY","OH","OK",
+        "OR","PA","RI","SC","SD","TN","TX","UT","VA","VT","WA","WI","WV","DC"
+    ]
+    US_STATE_NAMES = [
+        "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware",
+        "Florida","Georgia","Hawaii","Iowa","Idaho","Illinois","Indiana","Kansas","Kentucky",
+        "Louisiana","Massachusetts","Maryland","Maine","Michigan","Minnesota","Missouri","Mississippi",
+        "Montana","North Carolina","North Dakota","Nebraska","New Hampshire","New Jersey","New Mexico",
+        "Nevada","New York","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina",
+        "South Dakota","Tennessee","Texas","Utah","Virginia","Vermont","Washington","Wisconsin",
+        "West Virginia","District of Columbia"
+    ]
+    CA_PROV_CODES = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"]
+    CA_PROV_NAMES = [
+        "Alberta","British Columbia","Manitoba","New Brunswick","Newfoundland and Labrador","Nova Scotia",
+        "Northwest Territories","Nunavut","Ontario","Prince Edward Island","Quebec","Saskatchewan","Yukon"
+    ]
+    AU_STATE_CODES = ["NSW","VIC","QLD","SA","WA","TAS","ACT","NT"]
+    AU_STATE_NAMES = [
+        "New South Wales","Victoria","Queensland","South Australia","Western Australia","Tasmania",
+        "Australian Capital Territory","Northern Territory"
+    ]
+    COUNTRY_WORDS = [
+        r"United\s+States", r"U\.?S\.?A\.?", r"Canada", r"France", r"Germany", r"Deutschland",
+        r"Spain", r"España", r"Italy", r"Italia", r"Australia", r"Ireland",
+        r"Republic\s+of\s+Ireland", r"Netherlands", r"Nederland", r"Belgium", r"Belgique",
+        r"Luxembourg", r"Switzerland", r"Suisse", r"Sweden", r"Norway", r"Denmark",
+        r"Finland", r"Austria", r"Portugal", r"Poland", r"Czech", r"Hungary", r"Greece"
+    ]
+
+    # Postal code patterns
+    PAT_US_ZIP_END = r"\d{5}(?:-\d{4})?$"
+    PAT_CA_PC_END = r"[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\s?\d[ABCEGHJ-NPRSTV-Z]\d$"
+    PAT_NL_PC_END = r"\d{4}\s?[A-Z]{2}$"
+    PAT_IE_EIR_END = r"[A-Z]\d{2}\s?[A-Z0-9]{4}$"
+    PAT_FIVE_DIGITS = r'\b\d{5}\b'
+    PAT_US_ADDRESS_CONTEXT = r'(?i)\b(suite|highway|avenue|boulevard|drive|street|road|lane|court|circle|way|dr|rd|ave|blvd|st|ln|hwy)\b'
+
+    # Build regex patterns
+    PAT_US_STATE_TAIL = rf"(?:,?\s*)\b({'|'.join(US_STATE_CODES)})\b(?:\s*{PAT_US_ZIP_END})?$"
+    PAT_US_STATE_NAME_TAIL = rf"(?i)(?:,?\s*)\b({'|'.join(US_STATE_NAMES)})\b(?:\s*{PAT_US_ZIP_END})?$"
+    PAT_US_STATE_ABBR = rf"\b({'|'.join(US_STATE_CODES)})\b"
+    PAT_CA_PROV_TAIL = rf"(?:,?\s*)\b({'|'.join(CA_PROV_CODES)})\b(?:\s*{PAT_CA_PC_END})?$"
+    PAT_CA_PROV_NAME_TAIL = rf"(?i)(?:,?\s*)\b({'|'.join(CA_PROV_NAMES)})\b(?:\s*{PAT_CA_PC_END})?$"
+    PAT_AU_STATE_TAIL = rf"(?:,?\s*)\b({'|'.join(AU_STATE_CODES)})\b(?:\s*\d{{4}})?$"
+    PAT_AU_STATE_NAME_TAIL = rf"(?i)(?:,?\s*)\b({'|'.join(AU_STATE_NAMES)})\b(?:\s*\d{{4}})?$"
+    PAT_COUNTRY_WORDS_REGEX = rf"(?i)\b({'|'.join(COUNTRY_WORDS)})\b"
+
+    # Safe passes for UK place names
+    SAFE_PASSES = [
+        r"(?i)\bNorthern\s+Ireland\b",
+        r"(?i)\bDenmark\s+Hill\b",
+        r"(?i)\bDenmark\s+St(?:reet)?\b",
+        r"(?i)\bCanada\s+Place\b",
+        r"(?i)\bCanada\s+Water\b",
+        r"(?i)\bNew\s+England\b",
+    ]
+    SAFE_PASS_PATTERN = "|".join(f"({p})" for p in SAFE_PASSES)
+
+    # Build foreign indicator (only for POIs with addresses)
+    has_address = pl.col("address").is_not_null()
+    has_uk_postcode = pl.col("postcode").is_not_null()
+
+    foreign_indicator = has_address & (
+        pl.col("address").str.contains(PAT_COUNTRY_WORDS_REGEX, literal=False)
+        | pl.col("address").str.contains(PAT_US_STATE_TAIL, literal=False)
+        | pl.col("address").str.contains(PAT_US_STATE_NAME_TAIL, literal=False)
+        | pl.col("address").str.contains(PAT_CA_PROV_TAIL, literal=False)
+        | pl.col("address").str.contains(PAT_CA_PROV_NAME_TAIL, literal=False)
+        | pl.col("address").str.contains(PAT_AU_STATE_TAIL, literal=False)
+        | pl.col("address").str.contains(PAT_AU_STATE_NAME_TAIL, literal=False)
+        | pl.col("address").str.contains(PAT_CA_PC_END, literal=False)
+        | pl.col("address").str.contains(PAT_NL_PC_END, literal=False)
+        | pl.col("address").str.contains(PAT_IE_EIR_END, literal=False)
+        # Enhanced: 5-digit patterns with US address context
+        | (
+            pl.col("address").str.contains(PAT_FIVE_DIGITS, literal=False) &
+            (
+                pl.col("address").str.contains(PAT_US_ADDRESS_CONTEXT, literal=False) |
+                pl.col("address").str.contains(PAT_US_STATE_ABBR, literal=False) |
+                pl.col("address").str.contains(r'(?i)(USA|United States|America)', literal=False)
+            )
+        )
+    ) & (~pl.col("address").str.contains(SAFE_PASS_PATTERN, literal=False))
+
+    # Filter: foreign indicator AND no UK postcode
+    to_remove = foursquare.filter(foreign_indicator & ~has_uk_postcode)
+
+    if len(to_remove) == 0:
+        print("  No foreign addresses detected")
+        return foursquare
+
+    print(f"  Foreign addresses detected: {len(to_remove):,}")
+
+    # Save removed POIs
+    if save_removed:
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_path = f"{output_dir}/foreign_addresses_removed.parquet"
+        to_remove.select([
+            "fsq_place_id", "name", "address", "postcode", "lat", "lng", "fsq_category_labels"
+        ]).write_parquet(output_path)
+        print(f"  Saved removed POIs: {output_path}")
+
+    # Create filtered dataset
+    filtered = foursquare.filter(~(foreign_indicator & ~has_uk_postcode))
+
+    print(f"POIs remaining after foreign address removal: {len(filtered):,}")
+    print(f"Removed: {initial_count - len(filtered):,} ({100 * (initial_count - len(filtered)) / initial_count:.3f}%)")
+
+    return filtered
+
+
 def filter_foursquare_quality(
     foursquare: pl.DataFrame,
     boundary_path: str = "data/input_files/Countries_December_2022_UK_BGC_1943732719298389253.gpkg",
@@ -734,7 +879,9 @@ def filter_foursquare_quality(
     save_duplicates_removed: bool = True,
     filter_business_changes: bool = True,
     business_change_same_date_safeguard: bool = True,
-    save_business_changes_removed: bool = True
+    save_business_changes_removed: bool = True,
+    filter_foreign_addresses: bool = True,
+    save_foreign_addresses_removed: bool = True
 ) -> pl.DataFrame:
     """
     Apply quality filters to the Foursquare DataFrame to remove low-quality entries.
@@ -744,6 +891,7 @@ def filter_foursquare_quality(
     2. UK boundary filter: Removes POIs outside the UK boundary (+ buffer)
     3. Duplicate POI filter: Removes duplicate POIs (keeps most recent from each group)
     4. Business change filter: Removes old POIs where business changed at same location
+    5. Foreign address filter: Removes POIs with clearly non-UK addresses
 
     Parameters:
     - foursquare: polars.DataFrame containing Foursquare POI data with 'lat', 'lng', 'name' columns
@@ -760,6 +908,8 @@ def filter_foursquare_quality(
     - filter_business_changes: Whether to apply business change filter (default: True)
     - business_change_same_date_safeguard: Protect bulk-imported outlet centers (default: True)
     - save_business_changes_removed: Whether to save removed business change POIs (default: True)
+    - filter_foreign_addresses: Whether to apply foreign address filter (default: True)
+    - save_foreign_addresses_removed: Whether to save removed foreign addresses (default: True)
 
     Returns:
     - polars.DataFrame after applying quality filters.
@@ -825,6 +975,16 @@ def filter_foursquare_quality(
             enable_same_date_safeguard=business_change_same_date_safeguard,
             save_removed=save_business_changes_removed,
             output_dir="data/POI_files/business_changes_removed"
+        )
+
+    # Apply foreign address filter
+    if filter_foreign_addresses:
+        print("\n5. Filtering foreign addresses...")
+        print("-" * 60)
+        foursquare_filt = filter_foreign_address_pois(
+            foursquare_filt,
+            save_removed=save_foreign_addresses_removed,
+            output_dir="data/POI_files/foreign_addresses_removed"
         )
 
     print("\n" + "="*60)
