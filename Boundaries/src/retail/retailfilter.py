@@ -116,7 +116,7 @@ def filter_foursquare(foursquare):
 
     # Filter for open locations
     foursquare = foursquare.filter(pl.col("date_closed").is_null())
-    print(f"Filtered Foursquare data (remove closed): {foursquare.shape[0]} rows remaining.")   
+    print(f"Filtered Foursquare data (remove closed): {foursquare.shape[0]} rows remaining.")
     # remove any with same name and lat lng (some have multiple categories)
     foursquare = foursquare.unique(subset=["name","lat","lng"])
 
@@ -305,10 +305,7 @@ def filter_foursquare_invmethod(foursquare):
     #     removed_df.write_parquet("data/POI_files/removed_british_names.parquet")
     #     print(f"Removed {removed_df.height} rows where name was just a British name. Saved to data/POI_files/removed_british_names.parquet")
 
-    # Filter for open locations
-    foursquare_filt = foursquare_filt.filter(pl.col("date_closed").is_null())
-    print(f"Filtered Foursquare data (remove closed): {foursquare_filt.shape[0]} rows remaining.")
-    # remove any with same name and lat lng (some have multiple categories)
+    # Remove any with same name and lat lng (some have multiple categories)
     foursquare_filt = foursquare_filt.unique(subset=["name","lat","lng"])
 
 
