@@ -62,8 +62,7 @@ overture = pl.read_parquet("data/input_files/poi_uk_overture_proc.parquet")
 foursquare = foursquare_qualityfilter.filter_foursquare_quality(foursquare)
 
 # Apply category filters
-# foursquare = retailfilter.filter_foursquare(foursquare)
-foursquare = retailfilter.filter_foursquare_invmethod(foursquare)
+foursquare = retailfilter.filter_foursquare(foursquare)
 overture = retailfilter.filter_overture(overture)
 
 (
