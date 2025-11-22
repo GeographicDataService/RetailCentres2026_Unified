@@ -9,7 +9,7 @@ import polars as pl
 import sys
 sys.path.insert(0, 'src')
 
-from retail.retailfilter import filter_foursquare_invmethod
+from retail.retailfilter import filter_foursquare
 from retail.foursquare_qualityfilter import filter_defunct_retailers, filter_by_uk_boundary
 
 # Current patterns from foreign address filter
@@ -98,7 +98,7 @@ def main():
     print(f"\nLoading and filtering: {input_file}")
     foursquare = pl.read_parquet(input_file)
 
-    foursquare_filt = filter_foursquare_invmethod(foursquare)
+    foursquare_filt = filter_foursquare(foursquare)
     foursquare_filt = foursquare_filt.filter(pl.col("date_closed").is_null())
     foursquare_filt = filter_defunct_retailers(
         foursquare_filt,

@@ -7,7 +7,7 @@ import polars as pl
 import sys
 sys.path.insert(0, 'src')
 
-from retail.retailfilter import filter_foursquare_invmethod
+from retail.retailfilter import filter_foursquare
 from retail.foursquare_qualityfilter import filter_foursquare_quality
 
 def main():
@@ -23,7 +23,7 @@ def main():
 
     # Apply retail filter first
     print("\nApplying retail category filter...")
-    foursquare_retail = filter_foursquare_invmethod(foursquare)
+    foursquare_retail = filter_foursquare(foursquare)
     print(f"After retail filter: {len(foursquare_retail):,}")
 
     # Apply integrated quality filter (defunct + UK boundary + duplicates)

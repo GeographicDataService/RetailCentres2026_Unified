@@ -14,7 +14,7 @@ import polars as pl
 import sys
 sys.path.insert(0, 'src')
 
-from retail.retailfilter import filter_foursquare_invmethod
+from retail.retailfilter import filter_foursquare
 from retail.foursquare_qualityfilter import filter_defunct_retailers, filter_by_uk_boundary
 
 # ===== FOREIGN ADDRESS PATTERNS =====
@@ -112,7 +112,7 @@ def main():
     print(f"Total POIs: {len(foursquare):,}")
 
     print("\nApplying retail filter...")
-    foursquare_filt = filter_foursquare_invmethod(foursquare)
+    foursquare_filt = filter_foursquare(foursquare)
     print(f"After retail filter: {len(foursquare_filt):,}")
 
     print("\nApplying quality filters...")
