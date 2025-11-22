@@ -865,6 +865,177 @@ def filter_foreign_address_pois(
     return filtered
 
 
+def filter_postcode_mismatch_pois(
+    foursquare: pl.DataFrame,
+    onspd_dir: str = "data/input_files/onspd",
+    distance_threshold_m: float = 1000.0,
+    save_removed: bool = True,
+    output_dir: str = "data/POI_files/postcode_mismatch_removed"
+) -> pl.DataFrame:
+    """
+    Filter POIs where coordinates don't match postcode location.
+
+    Uses ONS Postcode Directory (ONSPD) to look up official postcode coordinates
+    and removes POIs where the distance exceeds the threshold.
+
+    Detection criteria:
+    - POI has a UK postcode
+    - Look up postcode in ONSPD
+    - Calculate distance between POI coords and postcode coords
+    - Flag if distance exceeds threshold
+
+    Parameters:
+    - foursquare: DataFrame with POI data (must have lat, lng, postcode columns)
+    - onspd_dir: Path to directory containing ONSPD CSV files
+    - distance_threshold_m: Maximum allowed distance in meters (default: 1000m)
+    - save_removed: Whether to save removed POIs (default: True)
+    - output_dir: Directory to save removed POI files
+
+    Returns:
+    - DataFrame with postcode mismatches removed
+    """
+    import glob
+    import numpy as np
+
+    def haversine_distance(lat1, lon1, lat2, lon2):
+        """Calculate haversine distance between two points in meters."""
+        R = 6371000
+        lat1_rad = np.radians(lat1)
+        lat2_rad = np.radians(lat2)
+        delta_lat = np.radians(lat2 - lat1)
+        delta_lon = np.radians(lon2 - lon1)
+        a = np.sin(delta_lat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(delta_lon / 2)**2
+        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+        return R * c
+
+    print(f"Filtering postcode mismatches (threshold: {distance_threshold_m}m)...")
+
+    initial_count = len(foursquare)
+
+    # Filter to POIs with postcodes
+    has_postcode = foursquare.filter(pl.col("postcode").is_not_null())
+    without_postcode = foursquare.filter(pl.col("postcode").is_null())
+
+    print(f"  POIs with postcode: {len(has_postcode):,} ({100*len(has_postcode)/initial_count:.1f}%)")
+    print(f"  POIs without postcode: {len(without_postcode):,} ({100*len(without_postcode)/initial_count:.1f}%)")
+
+    if len(has_postcode) == 0:
+        print("  No POIs with postcodes to check")
+        return foursquare
+
+    # Load ONSPD
+    print(f"  Loading ONSPD from {onspd_dir}...")
+    csv_files = glob.glob(f"{onspd_dir}/*.csv")
+
+    if len(csv_files) == 0:
+        print(f"  WARNING: No ONSPD files found in {onspd_dir}")
+        print(f"  Skipping postcode mismatch filter")
+        return foursquare
+
+    dfs = []
+    for csv_file in csv_files:
+        df = pl.read_csv(
+            csv_file,
+            columns=["pcds", "lat", "long"],
+            schema_overrides={"pcds": pl.Utf8, "lat": pl.Float64, "long": pl.Float64}
+        )
+        dfs.append(df)
+
+    onspd = pl.concat(dfs)
+    onspd = onspd.rename({"pcds": "postcode", "lat": "pc_latitude", "long": "pc_longitude"})
+    onspd = onspd.filter(
+        pl.col("postcode").is_not_null() &
+        pl.col("pc_latitude").is_not_null() &
+        pl.col("pc_longitude").is_not_null()
+    )
+    onspd = onspd.with_columns(
+        pl.col("postcode").str.to_uppercase().str.replace_all(r'\s+', ' ').alias("postcode")
+    )
+
+    print(f"  Loaded {len(onspd):,} postcodes")
+
+    # Clean postcodes to match ONSPD format
+    has_postcode = has_postcode.with_columns(
+        pl.col("postcode").str.to_uppercase().str.replace_all(r'\s+', ' ').alias("postcode_clean")
+    )
+
+    # Join with ONSPD
+    print(f"  Looking up postcodes in ONSPD...")
+    joined = has_postcode.join(
+        onspd,
+        left_on="postcode_clean",
+        right_on="postcode",
+        how="left"
+    )
+
+    # Filter out invalid/placeholder coordinates (99.999999, 0.0)
+    valid_lookups = joined.filter(
+        pl.col("pc_latitude").is_not_null() &
+        (pl.col("pc_latitude") != 99.999999) &
+        (pl.col("pc_longitude") != 0.0)
+    )
+
+    print(f"  Successfully looked up: {len(valid_lookups):,} ({100*len(valid_lookups)/len(has_postcode):.1f}%)")
+
+    if len(valid_lookups) == 0:
+        print("  No postcodes successfully looked up")
+        return foursquare
+
+    # Calculate distances
+    print(f"  Calculating distances...")
+    results_pd = valid_lookups.to_pandas()
+
+    results_pd['distance_m'] = haversine_distance(
+        results_pd['lat'].values,
+        results_pd['lng'].values,
+        results_pd['pc_latitude'].values,
+        results_pd['pc_longitude'].values
+    )
+
+    # Convert back to polars
+    results_df = pl.from_pandas(results_pd)
+
+    # Find mismatches
+    mismatches = results_df.filter(pl.col("distance_m") > distance_threshold_m)
+
+    print(f"  Mismatches found: {len(mismatches):,} ({100*len(mismatches)/len(results_df):.2f}%)")
+
+    # Save removed POIs
+    if save_removed and len(mismatches) > 0:
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_path = f"{output_dir}/postcode_mismatch_gt{int(distance_threshold_m)}m.parquet"
+        mismatches.write_parquet(output_path)
+        print(f"  Saved removed POIs: {output_path}")
+
+        # Save CSV summary
+        csv_path = f"{output_dir}/postcode_mismatch_gt{int(distance_threshold_m)}m.csv"
+        mismatches.select([
+            "fsq_place_id", "name", "lat", "lng", "postcode", "distance_m"
+        ]).write_csv(csv_path)
+        print(f"  Saved CSV summary: {csv_path}")
+
+    # Create filtered dataset: keep POIs that passed the check + POIs without postcodes
+    passed = results_df.filter(pl.col("distance_m") <= distance_threshold_m)
+
+    # Drop the temporary columns
+    passed = passed.drop(["postcode_clean", "pc_latitude", "pc_longitude", "distance_m"], strict=False)
+
+    # Combine with POIs that weren't checked (no postcode or no lookup)
+    not_checked = foursquare.filter(
+        pl.col("postcode").is_null() |
+        ~pl.col("fsq_place_id").is_in(results_df.select("fsq_place_id"))
+    )
+
+    filtered = pl.concat([passed, not_checked])
+
+    print(f"POIs remaining after postcode mismatch removal: {len(filtered):,}")
+    print(f"Removed: {initial_count - len(filtered):,} ({100 * (initial_count - len(filtered)) / initial_count:.3f}%)")
+
+    return filtered
+
+
 def filter_foursquare_quality(
     foursquare: pl.DataFrame,
     boundary_path: str = "data/input_files/Countries_December_2022_UK_BGC_1943732719298389253.gpkg",
@@ -881,7 +1052,11 @@ def filter_foursquare_quality(
     business_change_same_date_safeguard: bool = True,
     save_business_changes_removed: bool = True,
     filter_foreign_addresses: bool = True,
-    save_foreign_addresses_removed: bool = True
+    save_foreign_addresses_removed: bool = True,
+    filter_postcode_mismatch: bool = True,
+    postcode_mismatch_threshold_m: float = 1000.0,
+    onspd_dir: str = "data/input_files/onspd",
+    save_postcode_mismatch_removed: bool = True
 ) -> pl.DataFrame:
     """
     Apply quality filters to the Foursquare DataFrame to remove low-quality entries.
@@ -892,6 +1067,7 @@ def filter_foursquare_quality(
     3. Duplicate POI filter: Removes duplicate POIs (keeps most recent from each group)
     4. Business change filter: Removes old POIs where business changed at same location
     5. Foreign address filter: Removes POIs with clearly non-UK addresses
+    6. Postcode mismatch filter: Removes POIs where coordinates don't match postcode location
 
     Parameters:
     - foursquare: polars.DataFrame containing Foursquare POI data with 'lat', 'lng', 'name' columns
@@ -910,6 +1086,10 @@ def filter_foursquare_quality(
     - save_business_changes_removed: Whether to save removed business change POIs (default: True)
     - filter_foreign_addresses: Whether to apply foreign address filter (default: True)
     - save_foreign_addresses_removed: Whether to save removed foreign addresses (default: True)
+    - filter_postcode_mismatch: Whether to apply postcode mismatch filter (default: True)
+    - postcode_mismatch_threshold_m: Distance threshold in meters for postcode mismatch (default: 1000m)
+    - onspd_dir: Path to directory containing ONSPD CSV files
+    - save_postcode_mismatch_removed: Whether to save removed postcode mismatches (default: True)
 
     Returns:
     - polars.DataFrame after applying quality filters.
@@ -985,6 +1165,18 @@ def filter_foursquare_quality(
             foursquare_filt,
             save_removed=save_foreign_addresses_removed,
             output_dir="data/POI_files/foreign_addresses_removed"
+        )
+
+    # Apply postcode mismatch filter
+    if filter_postcode_mismatch:
+        print("\n6. Filtering postcode mismatches...")
+        print("-" * 60)
+        foursquare_filt = filter_postcode_mismatch_pois(
+            foursquare_filt,
+            onspd_dir=onspd_dir,
+            distance_threshold_m=postcode_mismatch_threshold_m,
+            save_removed=save_postcode_mismatch_removed,
+            output_dir="data/POI_files/postcode_mismatch_removed"
         )
 
     print("\n" + "="*60)
