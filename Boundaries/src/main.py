@@ -5,6 +5,7 @@ import numpy as np
 from utils import utils as ut
 from retail import retailfilter
 from retail import foursquare_qualityfilter
+from retail import landuse_filter
 from generate_networks import generate_networks
 import itertools
 import random
@@ -23,7 +24,41 @@ parser.add_argument(
     required=True,
     help="Name for this run (required)."
 )
+parser.add_argument(
+    "--use_presaved_filters",
+    action="store_true",
+    help="Use presaved quality filter results instead of running filters from scratch."
+)
+parser.add_argument(
+    "--save_filter_ids",
+    action="store_true",
+    help="Save quality filter IDs for reuse in future runs (only used when not using presaved filters)."
+)
+parser.add_argument(
+    "--filter_ids_path",
+    type=str,
+    default="data/POI_files/quality_filter_ids.parquet",
+    help="Path to save/load quality filter IDs."
+)
 args = parser.parse_args()
+
+# ========================================
+# LANDUSE FILTER CONFIGURATION
+# ========================================
+# Enable/disable landuse filtering
+ENABLE_LANDUSE_FILTER = True
+
+# Overlap threshold: networks with >= this % overlap are flagged
+LANDUSE_OVERLAP_THRESHOLD = 75.0
+
+# POI exemption threshold: networks with >= this many POIs are exempt from removal
+# Set to None to remove ALL high-overlap networks regardless of POI count
+LANDUSE_MIN_POIS_EXEMPT = 20
+
+# Paths to landuse data
+COMMERCIAL_LANDUSE_PATH = "data/input_files/commercial_landuse.parquet"
+INDUSTRIAL_LANDUSE_PATH = "data/input_files/industrial_landuse.parquet"
+# ========================================
 
 # Set random seed for reproducibility
 seed = 505
@@ -59,7 +94,19 @@ foursquare = pl.read_parquet(args.foursquare)
 overture = pl.read_parquet("data/input_files/poi_uk_overture_proc.parquet")
 
 # Apply quality filters (closed venues, defunct retailers, UK boundary)
-foursquare = foursquare_qualityfilter.filter_foursquare_quality(foursquare)
+if args.use_presaved_filters:
+    print(f"Using presaved quality filter results from: {args.filter_ids_path}")
+    foursquare = foursquare_qualityfilter.load_and_apply_presaved_filters(
+        foursquare,
+        filter_ids_path=args.filter_ids_path
+    )
+else:
+    print("Running quality filters from scratch")
+    foursquare = foursquare_qualityfilter.filter_foursquare_quality(
+        foursquare,
+        save_filter_ids=args.save_filter_ids,
+        filter_ids_path=args.filter_ids_path
+    )
 
 # Apply category filters
 foursquare = retailfilter.filter_foursquare(foursquare)
@@ -109,3 +156,27 @@ for idx, (
         split_threshold=split_threshold,
         merge_adjacent=merge_adjacent
     )
+
+    # Apply landuse filter if enabled
+    if ENABLE_LANDUSE_FILTER:
+        # Construct save folder path (same logic as in generate_networks)
+        merge_flag = "y" if merge_adjacent else "n"
+        folder_name = (
+            f"{run_name}_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
+            f"mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}"
+            f"_merge_{merge_flag}"
+        )
+        save_folder = f"data/output_files/{folder_name}"
+
+        print(f"\n{'='*80}")
+        print(f"Applying landuse filter to: {folder_name}")
+        print(f"{'='*80}\n")
+
+        landuse_filter.apply_landuse_filter_to_output(
+            save_folder=save_folder,
+            commercial_path=COMMERCIAL_LANDUSE_PATH,
+            industrial_path=INDUSTRIAL_LANDUSE_PATH,
+            overlap_threshold=LANDUSE_OVERLAP_THRESHOLD,
+            min_pois_exempt=LANDUSE_MIN_POIS_EXEMPT,
+            source=source
+        )

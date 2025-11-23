@@ -223,70 +223,103 @@ def filter_by_uk_boundary(
     foursquare: pl.DataFrame,
     boundary_path: str = "../data/input_files/Countries_December_2022_UK_BGC_1943732719298389253.gpkg",
     buffer_m: int = 50,
+    batch_size: int = 200000,
     save_outside: bool = False,
     output_path: Optional[str] = None
 ) -> pl.DataFrame:
     """
-    Filter Foursquare POIs to keep only those within the UK boundary (with optional buffer).
-
-    POIs slightly outside the UK boundary are often mislocated but real POIs. The buffer
-    helps catch these edge cases, though a tight buffer (50-100m) is recommended to avoid
-    including genuinely offshore POIs.
+    Filter Foursquare POIs to keep only those within the UK boundary (batched for low memory).
 
     Parameters:
     - foursquare: polars.DataFrame containing Foursquare POI data with 'lat' and 'lng' columns
-    - boundary_path: Path to UK boundary geopackage file (default: Countries_December_2022 .gpkg)
+    - boundary_path: Path to UK boundary geopackage file
     - buffer_m: Buffer distance in meters to extend boundary (default: 50m)
+    - batch_size: Number of POIs to process at once (default: 200k, reduce if out of memory)
     - save_outside: Whether to save POIs outside the boundary for inspection (default: False)
-    - output_path: Path to save outside POIs if save_outside=True (default: "../data/POI_files/foursquare_outside_uk.parquet")
+    - output_path: Path to save outside POIs if save_outside=True
 
     Returns:
     - polars.DataFrame containing only POIs within the buffered UK boundary
     """
+    import gc
 
-    # Convert Polars -> Pandas -> GeoDataFrame
-    pdf = foursquare.to_pandas()
-    foursquare_gdf = gpd.GeoDataFrame(
-        pdf,
-        geometry=gpd.points_from_xy(pdf["lng"], pdf["lat"]),
-        crs="EPSG:4326"
-    ).to_crs(epsg=27700)
+    total_pois = len(foursquare)
 
-    # Load UK boundary
+    # Load UK boundary once (outside loop)
+    print(f"  Loading UK boundary...")
     uk_boundary = gpd.read_file(boundary_path).to_crs(epsg=27700)
-
-    # Dissolve into a single polygon and add buffer
     uk_boundary = uk_boundary.dissolve()
     uk_boundary["geometry"] = uk_boundary.buffer(buffer_m)
 
-    # Spatial join: keep POIs that intersect buffered boundary
-    joined = gpd.sjoin(
-        foursquare_gdf, uk_boundary, how="left", predicate="within"
-    )
+    # Process in batches
+    print(f"  Processing {total_pois:,} POIs in batches of {batch_size:,}...")
 
-    # POIs with no boundary match = outside UK (+ buffer)
-    outside_uk = joined[joined.index_right.isna()]
-    inside_uk = joined[joined.index_right.notna()]
+    num_batches = (total_pois + batch_size - 1) // batch_size
+    all_inside = []
+    all_outside = []
+    expected_schema = None  # Store schema from first batch
 
-    print(f"Total POIs: {len(foursquare_gdf):,}")
+    for batch_idx in range(num_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = min(start_idx + batch_size, total_pois)
+
+        batch = foursquare[start_idx:end_idx]
+
+        # Convert batch to GeoDataFrame
+        pdf = batch.to_pandas()
+        batch_gdf = gpd.GeoDataFrame(
+            pdf,
+            geometry=gpd.points_from_xy(pdf["lng"], pdf["lat"]),
+            crs="EPSG:4326"
+        ).to_crs(epsg=27700)
+
+        # Spatial join
+        joined = gpd.sjoin(batch_gdf, uk_boundary, how="left", predicate="within")
+
+        # Split inside/outside
+        batch_inside = joined[joined.index_right.notna()].drop(columns=["index_right", "geometry"], errors="ignore")
+        batch_outside = joined[joined.index_right.isna()].drop(columns=["index_right", "geometry"], errors="ignore")
+
+        # Convert back to Polars with schema consistency
+        if len(batch_inside) > 0:
+            batch_inside_pl = pl.from_pandas(batch_inside)
+            if expected_schema is None:
+                expected_schema = batch_inside_pl.schema
+            else:
+                # Cast to expected schema to ensure consistency
+                batch_inside_pl = batch_inside_pl.cast(expected_schema)
+            all_inside.append(batch_inside_pl)
+
+        if len(batch_outside) > 0:
+            batch_outside_pl = pl.from_pandas(batch_outside)
+            if expected_schema is not None:
+                # Cast to expected schema to ensure consistency
+                batch_outside_pl = batch_outside_pl.cast(expected_schema)
+            all_outside.append(batch_outside_pl)
+
+        # Cleanup
+        del batch, pdf, batch_gdf, joined, batch_inside, batch_outside
+        gc.collect()
+
+        if (batch_idx + 1) % 3 == 0 or batch_idx == num_batches - 1:
+            print(f"    Processed {end_idx:,}/{total_pois:,} POIs...")
+
+    # Combine results
+    inside_uk = pl.concat(all_inside) if all_inside else pl.DataFrame()
+    outside_uk = pl.concat(all_outside) if all_outside else pl.DataFrame()
+
+    print(f"Total POIs: {total_pois:,}")
     print(f"Outside UK boundary ({buffer_m}m buffer): {len(outside_uk):,}")
     print(f"Inside UK boundary: {len(inside_uk):,}")
 
-    # Optionally save outside POIs for inspection
-    if save_outside:
+    # Save outside POIs
+    if save_outside and len(outside_uk) > 0:
         if output_path is None:
             output_path = "../data/POI_files/foursquare_outside_uk.parquet"
-        outside_uk.to_parquet(output_path, index=False)
+        outside_uk.write_parquet(output_path)
         print(f"Outside POIs saved to: {output_path}")
 
-    # Drop the spatial join columns (index_right) and convert back to Polars
-    inside_uk = inside_uk.drop(columns=["index_right"], errors="ignore")
-
-    # Convert back to Polars DataFrame (drop geometry column)
-    inside_uk_df = inside_uk.drop(columns=["geometry"])
-    result = pl.from_pandas(inside_uk_df)
-
-    return result
+    return inside_uk
 
 
 # === Duplicate POI Detection Helper Functions ===
@@ -865,173 +898,68 @@ def filter_foreign_address_pois(
     return filtered
 
 
-def filter_postcode_mismatch_pois(
+# Import low-memory version
+from retail.foursquare_qualityfilter_lowmem import filter_postcode_mismatch_lowmem as filter_postcode_mismatch_pois
+
+
+def load_and_apply_presaved_filters(
     foursquare: pl.DataFrame,
-    onspd_dir: str = "data/input_files/onspd",
-    distance_threshold_m: float = 1000.0,
-    save_removed: bool = True,
-    output_dir: str = "data/POI_files/postcode_mismatch_removed"
+    filter_ids_path: str = "data/POI_files/quality_filter_ids.parquet"
 ) -> pl.DataFrame:
     """
-    Filter POIs where coordinates don't match postcode location.
+    Apply presaved quality filter results by removing POIs based on saved IDs.
 
-    Uses ONS Postcode Directory (ONSPD) to look up official postcode coordinates
-    and removes POIs where the distance exceeds the threshold.
-
-    Detection criteria:
-    - POI has a UK postcode
-    - Look up postcode in ONSPD
-    - Calculate distance between POI coords and postcode coords
-    - Flag if distance exceeds threshold
+    This is a fast alternative to running all quality filters from scratch.
+    Use this when you've already run filter_foursquare_quality with save_filter_ids=True.
 
     Parameters:
-    - foursquare: DataFrame with POI data (must have lat, lng, postcode columns)
-    - onspd_dir: Path to directory containing ONSPD CSV files
-    - distance_threshold_m: Maximum allowed distance in meters (default: 1000m)
-    - save_removed: Whether to save removed POIs (default: True)
-    - output_dir: Directory to save removed POI files
+    - foursquare: polars.DataFrame containing Foursquare POI data with 'fsq_place_id' column
+    - filter_ids_path: Path to the parquet file containing filter results
 
     Returns:
-    - DataFrame with postcode mismatches removed
+    - polars.DataFrame with quality-filtered POIs (POIs from filter_ids removed)
     """
-    import glob
-    import numpy as np
+    print("\n" + "="*60)
+    print("=== Applying Presaved Quality Filters ===")
+    print("="*60)
 
-    def haversine_distance(lat1, lon1, lat2, lon2):
-        """Calculate haversine distance between two points in meters."""
-        R = 6371000
-        lat1_rad = np.radians(lat1)
-        lat2_rad = np.radians(lat2)
-        delta_lat = np.radians(lat2 - lat1)
-        delta_lon = np.radians(lon2 - lon1)
-        a = np.sin(delta_lat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(delta_lon / 2)**2
-        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-        return R * c
+    if not Path(filter_ids_path).exists():
+        raise FileNotFoundError(
+            f"Filter IDs file not found: {filter_ids_path}\n"
+            f"Run filter_foursquare_quality with save_filter_ids=True first."
+        )
 
-    print(f"Filtering postcode mismatches (threshold: {distance_threshold_m}m)...")
+    print(f"Loading filter IDs from: {filter_ids_path}")
+    removed_ids = pl.read_parquet(filter_ids_path)
+
+    # Show breakdown
+    print("\nFilter breakdown:")
+    breakdown = removed_ids.group_by("filter_type").agg(pl.count().alias("count"))
+    for row in breakdown.iter_rows(named=True):
+        print(f"  - {row['filter_type']}: {row['count']:,}")
+
+    total_to_remove = len(removed_ids.select("fsq_place_id").unique())
+    print(f"\nTotal unique IDs to remove: {total_to_remove:,}")
+
+    # Check for fsq_place_id column
+    if "fsq_place_id" not in foursquare.columns:
+        raise ValueError("foursquare DataFrame must have 'fsq_place_id' column")
 
     initial_count = len(foursquare)
 
-    # Filter to POIs with postcodes
-    has_postcode = foursquare.filter(pl.col("postcode").is_not_null())
-    without_postcode = foursquare.filter(pl.col("postcode").is_null())
-
-    print(f"  POIs with postcode: {len(has_postcode):,} ({100*len(has_postcode)/initial_count:.1f}%)")
-    print(f"  POIs without postcode: {len(without_postcode):,} ({100*len(without_postcode)/initial_count:.1f}%)")
-
-    if len(has_postcode) == 0:
-        print("  No POIs with postcodes to check")
-        return foursquare
-
-    # Load ONSPD
-    print(f"  Loading ONSPD from {onspd_dir}...")
-    csv_files = glob.glob(f"{onspd_dir}/*.csv")
-
-    if len(csv_files) == 0:
-        print(f"  WARNING: No ONSPD files found in {onspd_dir}")
-        print(f"  Skipping postcode mismatch filter")
-        return foursquare
-
-    dfs = []
-    for csv_file in csv_files:
-        df = pl.read_csv(
-            csv_file,
-            columns=["pcds", "lat", "long"],
-            schema_overrides={"pcds": pl.Utf8, "lat": pl.Float64, "long": pl.Float64}
-        )
-        dfs.append(df)
-
-    onspd = pl.concat(dfs)
-    onspd = onspd.rename({"pcds": "postcode", "lat": "pc_latitude", "long": "pc_longitude"})
-    onspd = onspd.filter(
-        pl.col("postcode").is_not_null() &
-        pl.col("pc_latitude").is_not_null() &
-        pl.col("pc_longitude").is_not_null()
-    )
-    onspd = onspd.with_columns(
-        pl.col("postcode").str.to_uppercase().str.replace_all(r'\s+', ' ').alias("postcode")
+    # Remove POIs using anti-join
+    filtered = foursquare.join(
+        removed_ids.select("fsq_place_id").unique(),
+        on="fsq_place_id",
+        how="anti"
     )
 
-    print(f"  Loaded {len(onspd):,} postcodes")
+    print(f"\nStarting POIs: {initial_count:,}")
+    print(f"POIs removed: {initial_count - len(filtered):,}")
+    print(f"POIs remaining: {len(filtered):,}")
+    print(f"Removal rate: {100 * (initial_count - len(filtered)) / initial_count:.2f}%")
 
-    # Clean postcodes to match ONSPD format
-    has_postcode = has_postcode.with_columns(
-        pl.col("postcode").str.to_uppercase().str.replace_all(r'\s+', ' ').alias("postcode_clean")
-    )
-
-    # Join with ONSPD
-    print(f"  Looking up postcodes in ONSPD...")
-    joined = has_postcode.join(
-        onspd,
-        left_on="postcode_clean",
-        right_on="postcode",
-        how="left"
-    )
-
-    # Filter out invalid/placeholder coordinates (99.999999, 0.0)
-    valid_lookups = joined.filter(
-        pl.col("pc_latitude").is_not_null() &
-        (pl.col("pc_latitude") != 99.999999) &
-        (pl.col("pc_longitude") != 0.0)
-    )
-
-    print(f"  Successfully looked up: {len(valid_lookups):,} ({100*len(valid_lookups)/len(has_postcode):.1f}%)")
-
-    if len(valid_lookups) == 0:
-        print("  No postcodes successfully looked up")
-        return foursquare
-
-    # Calculate distances
-    print(f"  Calculating distances...")
-    results_pd = valid_lookups.to_pandas()
-
-    results_pd['distance_m'] = haversine_distance(
-        results_pd['lat'].values,
-        results_pd['lng'].values,
-        results_pd['pc_latitude'].values,
-        results_pd['pc_longitude'].values
-    )
-
-    # Convert back to polars
-    results_df = pl.from_pandas(results_pd)
-
-    # Find mismatches
-    mismatches = results_df.filter(pl.col("distance_m") > distance_threshold_m)
-
-    print(f"  Mismatches found: {len(mismatches):,} ({100*len(mismatches)/len(results_df):.2f}%)")
-
-    # Save removed POIs
-    if save_removed and len(mismatches) > 0:
-        import os
-        os.makedirs(output_dir, exist_ok=True)
-
-        output_path = f"{output_dir}/postcode_mismatch_gt{int(distance_threshold_m)}m.parquet"
-        mismatches.write_parquet(output_path)
-        print(f"  Saved removed POIs: {output_path}")
-
-        # Save CSV summary
-        csv_path = f"{output_dir}/postcode_mismatch_gt{int(distance_threshold_m)}m.csv"
-        mismatches.select([
-            "fsq_place_id", "name", "lat", "lng", "postcode", "distance_m"
-        ]).write_csv(csv_path)
-        print(f"  Saved CSV summary: {csv_path}")
-
-    # Create filtered dataset: keep POIs that passed the check + POIs without postcodes
-    passed = results_df.filter(pl.col("distance_m") <= distance_threshold_m)
-
-    # Drop the temporary columns
-    passed = passed.drop(["postcode_clean", "pc_latitude", "pc_longitude", "distance_m"], strict=False)
-
-    # Combine with POIs that weren't checked (no postcode or no lookup)
-    not_checked = foursquare.filter(
-        pl.col("postcode").is_null() |
-        ~pl.col("fsq_place_id").is_in(results_df.select("fsq_place_id"))
-    )
-
-    filtered = pl.concat([passed, not_checked])
-
-    print(f"POIs remaining after postcode mismatch removal: {len(filtered):,}")
-    print(f"Removed: {initial_count - len(filtered):,} ({100 * (initial_count - len(filtered)) / initial_count:.3f}%)")
+    print("="*60)
 
     return filtered
 
@@ -1055,8 +983,11 @@ def filter_foursquare_quality(
     save_foreign_addresses_removed: bool = True,
     filter_postcode_mismatch: bool = True,
     postcode_mismatch_threshold_m: float = 1000.0,
+    postcode_mismatch_batch_size: int = 100000,
     onspd_dir: str = "data/input_files/onspd",
-    save_postcode_mismatch_removed: bool = True
+    save_postcode_mismatch_removed: bool = True,
+    save_filter_ids: bool = False,
+    filter_ids_path: str = "data/POI_files/quality_filter_ids.parquet"
 ) -> pl.DataFrame:
     """
     Apply quality filters to the Foursquare DataFrame to remove low-quality entries.
@@ -1088,8 +1019,11 @@ def filter_foursquare_quality(
     - save_foreign_addresses_removed: Whether to save removed foreign addresses (default: True)
     - filter_postcode_mismatch: Whether to apply postcode mismatch filter (default: True)
     - postcode_mismatch_threshold_m: Distance threshold in meters for postcode mismatch (default: 1000m)
+    - postcode_mismatch_batch_size: Number of POIs to process at once (default: 100k, reduce if out of memory)
     - onspd_dir: Path to directory containing ONSPD CSV files
     - save_postcode_mismatch_removed: Whether to save removed postcode mismatches (default: True)
+    - save_filter_ids: Whether to save POI IDs removed by each filter for reuse (default: False)
+    - filter_ids_path: Path to save filter IDs parquet file (default: "data/POI_files/quality_filter_ids.parquet")
 
     Returns:
     - polars.DataFrame after applying quality filters.
@@ -1102,10 +1036,21 @@ def filter_foursquare_quality(
 
     foursquare_filt = foursquare
 
+    # Track removed IDs if saving is enabled
+    removed_ids_by_filter = {}
+
+    # Ensure fsq_place_id exists for tracking
+    if "fsq_place_id" not in foursquare.columns:
+        print("Warning: fsq_place_id column not found. Cannot save filter IDs.")
+        save_filter_ids = False
+
     # Filter for open locations (remove closed venues)
     print("\n0. Filtering closed venues...")
     print("-" * 60)
     initial_count = len(foursquare_filt)
+    if save_filter_ids:
+        closed_venues = foursquare_filt.filter(pl.col("date_closed").is_not_null())
+        removed_ids_by_filter["closed"] = closed_venues.select("fsq_place_id")
     foursquare_filt = foursquare_filt.filter(pl.col("date_closed").is_null())
     closed_count = initial_count - len(foursquare_filt)
     print(f"Removed {closed_count:,} closed venues")
@@ -1115,6 +1060,7 @@ def filter_foursquare_quality(
     if filter_defunct:
         print("\n1. Filtering defunct retailers...")
         print("-" * 60)
+        pre_filter_count = len(foursquare_filt)
         foursquare_filt = filter_defunct_retailers(
             foursquare_filt,
             defunct_csv_path=defunct_csv_path,
@@ -1122,21 +1068,37 @@ def filter_foursquare_quality(
             output_dir="data/POI_files/defunct_removed",
             top_n_brands=10
         )
+        if save_filter_ids:
+            removed_defunct = foursquare.filter(
+                ~pl.col("fsq_place_id").is_in(foursquare_filt.select("fsq_place_id"))
+            ).select("fsq_place_id")
+            if len(removed_defunct) > 0:
+                removed_ids_by_filter["defunct"] = removed_defunct
 
     # Apply UK boundary filter
     print("\n2. Filtering by UK boundary...")
     print("-" * 60)
+    pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
     foursquare_filt = filter_by_uk_boundary(
         foursquare_filt,
         boundary_path=boundary_path,
         buffer_m=buffer_m,
         save_outside=save_outside
     )
+    if save_filter_ids:
+        removed_outside_uk = pre_filter_ids.join(
+            foursquare_filt.select("fsq_place_id"),
+            on="fsq_place_id",
+            how="anti"
+        )
+        if len(removed_outside_uk) > 0:
+            removed_ids_by_filter["outside_uk"] = removed_outside_uk
 
     # Apply duplicate POI filter
     if filter_duplicates:
         print("\n3. Filtering duplicate POIs...")
         print("-" * 60)
+        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
         foursquare_filt = filter_duplicate_pois(
             foursquare_filt,
             name_threshold=duplicate_name_threshold,
@@ -1144,11 +1106,20 @@ def filter_foursquare_quality(
             save_removed=save_duplicates_removed,
             output_dir="data/POI_files/duplicates_removed"
         )
+        if save_filter_ids:
+            removed_duplicates = pre_filter_ids.join(
+                foursquare_filt.select("fsq_place_id"),
+                on="fsq_place_id",
+                how="anti"
+            )
+            if len(removed_duplicates) > 0:
+                removed_ids_by_filter["duplicates"] = removed_duplicates
 
     # Apply business change filter
     if filter_business_changes:
         print("\n4. Filtering business changes...")
         print("-" * 60)
+        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
         foursquare_filt = filter_business_change_pois(
             foursquare_filt,
             coord_precision=5,
@@ -1156,28 +1127,82 @@ def filter_foursquare_quality(
             save_removed=save_business_changes_removed,
             output_dir="data/POI_files/business_changes_removed"
         )
+        if save_filter_ids:
+            removed_business_changes = pre_filter_ids.join(
+                foursquare_filt.select("fsq_place_id"),
+                on="fsq_place_id",
+                how="anti"
+            )
+            if len(removed_business_changes) > 0:
+                removed_ids_by_filter["business_changes"] = removed_business_changes
 
     # Apply foreign address filter
     if filter_foreign_addresses:
         print("\n5. Filtering foreign addresses...")
         print("-" * 60)
+        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
         foursquare_filt = filter_foreign_address_pois(
             foursquare_filt,
             save_removed=save_foreign_addresses_removed,
             output_dir="data/POI_files/foreign_addresses_removed"
         )
+        if save_filter_ids:
+            removed_foreign = pre_filter_ids.join(
+                foursquare_filt.select("fsq_place_id"),
+                on="fsq_place_id",
+                how="anti"
+            )
+            if len(removed_foreign) > 0:
+                removed_ids_by_filter["foreign_addresses"] = removed_foreign
 
     # Apply postcode mismatch filter
     if filter_postcode_mismatch:
         print("\n6. Filtering postcode mismatches...")
         print("-" * 60)
+        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
         foursquare_filt = filter_postcode_mismatch_pois(
             foursquare_filt,
             onspd_dir=onspd_dir,
             distance_threshold_m=postcode_mismatch_threshold_m,
+            batch_size=postcode_mismatch_batch_size,
             save_removed=save_postcode_mismatch_removed,
             output_dir="data/POI_files/postcode_mismatch_removed"
         )
+        if save_filter_ids:
+            removed_postcode = pre_filter_ids.join(
+                foursquare_filt.select("fsq_place_id"),
+                on="fsq_place_id",
+                how="anti"
+            )
+            if len(removed_postcode) > 0:
+                removed_ids_by_filter["postcode_mismatch"] = removed_postcode
+
+    # Save filter IDs if requested
+    if save_filter_ids and removed_ids_by_filter:
+        print("\n" + "="*60)
+        print("=== Saving Filter IDs ===")
+        print("="*60)
+
+        # Combine all removed IDs with filter type labels
+        all_removed = []
+        for filter_name, ids_df in removed_ids_by_filter.items():
+            ids_with_filter = ids_df.with_columns(
+                pl.lit(filter_name).alias("filter_type")
+            )
+            all_removed.append(ids_with_filter)
+
+        combined_removed = pl.concat(all_removed)
+
+        # Save to parquet
+        output_dir = Path(filter_ids_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        combined_removed.write_parquet(filter_ids_path)
+
+        print(f"Filter IDs saved to: {filter_ids_path}")
+        print(f"Total removed IDs: {len(combined_removed):,}")
+        print("\nBreakdown by filter:")
+        for filter_name, ids_df in removed_ids_by_filter.items():
+            print(f"  - {filter_name}: {len(ids_df):,}")
 
     print("\n" + "="*60)
     print("=== Quality Filtering Complete ===")
