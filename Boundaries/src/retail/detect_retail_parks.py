@@ -232,12 +232,31 @@ def save_area_histogram(
     hist_path = Path(hist_path)
     hist_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.hist(area_values, bins=bins, color="#2a9d8f", edgecolor="white")
-    ax.set_title("Retail park area distribution (sqkm)")
-    ax.set_xlabel("Area (sqkm)")
-    ax.set_ylabel("Number of parks")
-    ax.grid(axis="y", linestyle="--", alpha=0.4)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+
+    ax_full, ax_zoom = axes
+
+    ax_full.hist(area_values, bins=bins, color="#2a9d8f", edgecolor="white")
+    ax_full.set_title("Retail park area distribution (sqkm)")
+    ax_full.set_xlabel("Area (sqkm)")
+    ax_full.set_ylabel("Number of parks")
+    ax_full.grid(axis="y", linestyle="--", alpha=0.4)
+
+    small_values = area_values[area_values <= 0.05]
+    if not small_values.empty:
+        ax_zoom.hist(small_values, bins=max(5, min(bins, 20)), color="#e76f51", edgecolor="white")
+        ax_zoom.set_xlim(0, 0.05)
+        ax_zoom.grid(axis="y", linestyle="--", alpha=0.4)
+    else:
+        ax_zoom.text(0.5, 0.5, "No parks ≤ 0.05 sqkm", ha="center", va="center", fontsize=10)
+        ax_zoom.set_xlim(0, 0.05)
+        ax_zoom.set_ylim(0, 1)
+
+    ax_zoom.set_title("Zoom: areas ≤ 0.05 sqkm")
+    ax_zoom.set_xlabel("Area (sqkm)")
+
+    for spine in ax_zoom.spines.values():
+        spine.set_alpha(0.6)
 
     fig.tight_layout()
     fig.savefig(hist_path, dpi=150)
