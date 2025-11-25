@@ -13,6 +13,7 @@ and can be integrated to create distinct retail park boundaries.
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import re
 from pathlib import Path
 from typing import Tuple, Optional
@@ -214,14 +215,46 @@ def compute_retail_park_metrics(
     return retail_landuse
 
 
+def save_area_histogram(
+    retail_parks: gpd.GeoDataFrame,
+    hist_path: Path,
+    bins: int = 30
+) -> Optional[Path]:
+    """Persist a histogram of park areas in square kilometres."""
+
+    if retail_parks.empty or "area_sqkm" not in retail_parks.columns:
+        return None
+
+    area_values = retail_parks["area_sqkm"].replace([np.inf, -np.inf], np.nan).dropna()
+    if area_values.empty:
+        return None
+
+    hist_path = Path(hist_path)
+    hist_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.hist(area_values, bins=bins, color="#2a9d8f", edgecolor="white")
+    ax.set_title("Retail park area distribution (sqkm)")
+    ax.set_xlabel("Area (sqkm)")
+    ax.set_ylabel("Number of parks")
+    ax.grid(axis="y", linestyle="--", alpha=0.4)
+
+    fig.tight_layout()
+    fig.savefig(hist_path, dpi=150)
+    plt.close(fig)
+
+    return hist_path
+
+
 def identify_retail_parks(
     retail_landuse_path: str,
     foursquare_pois_path: str,
     brands_csv_path: str,
-    min_ratio: float = 0.02,
+    min_ratio: float = 0.05,
     min_matched_pois: int = 1,
     predicate: str = "within",
-    output_path: Optional[str] = None
+    output_path: Optional[str] = None,
+    area_hist_path: Optional[str] = None
 ) -> gpd.GeoDataFrame:
     """
     Identify retail parks from retail landuse polygons based on bigbox brand presence.
@@ -230,7 +263,7 @@ def identify_retail_parks(
         retail_landuse_path: Path to retail landuse parquet (OSM retail polygons)
         foursquare_pois_path: Path to Foursquare POIs parquet
         brands_csv_path: Path to retail park brands CSV
-        min_ratio: Minimum ratio of bigbox POIs to total POIs (default: 0.02 = 2%)
+        min_ratio: Minimum ratio of bigbox POIs to total POIs (default: 0.05 = 5%)
         min_matched_pois: Minimum number of bigbox brand POIs (default: 1)
         predicate: Spatial predicate ("within" or "intersects")
         output_path: Optional path to save results as parquet
@@ -246,7 +279,27 @@ def identify_retail_parks(
     # Load data
     print("Loading data...")
     retail_landuse = gpd.read_parquet(retail_landuse_path)
-    foursquare_pois = gpd.read_parquet(foursquare_pois_path)
+
+    # Load Foursquare POIs - handle both GeoParquet and regular parquet
+    try:
+        foursquare_pois = gpd.read_parquet(foursquare_pois_path)
+    except ValueError:
+        # Not a GeoParquet - load as regular parquet and create geometry
+        foursquare_pois_df = pd.read_parquet(foursquare_pois_path)
+        from shapely.geometry import Point
+
+        # Use lat/lng columns (lowercase preferred)
+        lat_col = 'lat' if 'lat' in foursquare_pois_df.columns else 'LAT'
+        lng_col = 'lng' if 'lng' in foursquare_pois_df.columns else 'LONG'
+
+        geometry = [Point(lng, lat) for lng, lat in
+                   zip(foursquare_pois_df[lng_col], foursquare_pois_df[lat_col])]
+        foursquare_pois = gpd.GeoDataFrame(
+            foursquare_pois_df,
+            geometry=geometry,
+            crs="EPSG:4326"
+        )
+
     brands_list = pd.read_csv(brands_csv_path)
 
     print(f"  Retail landuse polygons: {len(retail_landuse):,}")
@@ -293,6 +346,19 @@ def identify_retail_parks(
     if output_path:
         retail_parks.to_parquet(output_path)
         print(f"Saved retail parks to: {output_path}")
+        print()
+
+    hist_path = area_hist_path
+    if hist_path is None:
+        if output_path:
+            output_path_obj = Path(output_path)
+            hist_path = output_path_obj.with_name(f"{output_path_obj.stem}_area_sqkm_hist.png")
+        else:
+            hist_path = Path("data/output_files/retail_parks_area_sqkm_hist.png")
+
+    saved_hist = save_area_histogram(retail_parks, Path(hist_path))
+    if saved_hist:
+        print(f"Saved area histogram to: {saved_hist}")
         print()
 
     print("="*80)
@@ -390,7 +456,6 @@ def convert_retail_parks_to_h3(
     # Add H3 hexagon geometries using utils function
     print("\nAdding H3 hexagon geometries...")
     import sys
-    from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from utils import utils as ut
     retail_parks_h3_geo = ut.to_geoframe(retail_parks_h3)
@@ -459,8 +524,8 @@ def main():
     parser.add_argument(
         "--min_ratio",
         type=float,
-        default=0.02,
-        help="Minimum ratio of bigbox to total POIs (default: 0.02 = 2%%)"
+        default=0.05,
+        help="Minimum ratio of bigbox to total POIs (default: 0.05 = 5%%)"
     )
     parser.add_argument(
         "--min_matched",
@@ -487,16 +552,17 @@ def main():
         help="Output path for retail parks dissolved polygons"
     )
     parser.add_argument(
+        "--output_hist",
+        type=str,
+        default="data/output_files/retail_parks_area_sqkm_hist.png",
+        help="Output path for histogram of retail park areas (sqkm)"
+    )
+    parser.add_argument(
         "--predicate",
         type=str,
         default="within",
         choices=["within", "intersects"],
         help="Spatial predicate for POI-polygon join"
-    )
-    parser.add_argument(
-        "--convert_h3",
-        action="store_true",
-        help="Convert retail parks to H3 cells and save both formats"
     )
 
     args = parser.parse_args()
@@ -508,7 +574,8 @@ def main():
         min_ratio=args.min_ratio,
         min_matched_pois=args.min_matched,
         predicate=args.predicate,
-        output_path=args.output
+        output_path=args.output,
+        area_hist_path=args.output_hist
     )
 
     # Print summary statistics
@@ -520,14 +587,12 @@ def main():
 
     print(retail_parks[display_cols].head(20).to_string(index=False))
 
-    # Convert to H3 cells if requested
-    if args.convert_h3:
-        print("\n")
-        retail_parks_h3, retail_parks_dissolved = convert_retail_parks_to_h3(
-            retail_parks,
-            output_h3_path=args.output_h3,
-            output_polygons_path=args.output_polygons
-        )
+    print("\n")
+    convert_retail_parks_to_h3(
+        retail_parks,
+        output_h3_path=args.output_h3,
+        output_polygons_path=args.output_polygons
+    )
 
 
 if __name__ == "__main__":
