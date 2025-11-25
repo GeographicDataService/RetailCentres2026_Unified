@@ -1,12 +1,20 @@
-import polars as pl
-import pandas as pd
-import geopandas as gpd
 import os
+from pathlib import Path
+from typing import Optional
+
+import geopandas as gpd
+import polars as pl
+
 from utils import utils as ut
-from retail import network_merger
-from retail import find_subcentres
 from retail import centre_postprocessing
+from retail import find_subcentres
+from retail import landuse_filter
 from retail import manual_edits
+from retail import network_merger
+
+
+COMMERCIAL_LANDUSE_PATH = Path("data/input_files/commercial_landuse.parquet")
+INDUSTRIAL_LANDUSE_PATH = Path("data/input_files/industrial_landuse.parquet")
 
 def generate_networks(
     combined: pl.DataFrame,
@@ -17,7 +25,10 @@ def generate_networks(
     min_retail_in_network: int = 10,
     min_to_fill: int = 5,
     split_threshold: int = 0,
-    merge_adjacent: bool = True
+    merge_adjacent: bool = True,
+    enable_landuse_filter: bool = False,
+    landuse_overlap_threshold: float = 75.0,
+    landuse_poi_threshold: Optional[int] = 20
 ) -> None:
     """
     Creates and processes retail centre networks from a combined Polars DataFrame.
@@ -128,6 +139,43 @@ def generate_networks(
         filt_cells_with_network = ut.join_networks_with_cells(
             filt_cells_with_network, input_cells
         )
+
+    pre_landuse_cells = filt_cells_with_network.clone()
+
+    if enable_landuse_filter and filt_cells_with_network.height > 0:
+        if not COMMERCIAL_LANDUSE_PATH.exists():
+            raise FileNotFoundError(f"Commercial landuse file missing: {COMMERCIAL_LANDUSE_PATH}")
+        if not INDUSTRIAL_LANDUSE_PATH.exists():
+            raise FileNotFoundError(f"Industrial landuse file missing: {INDUSTRIAL_LANDUSE_PATH}")
+
+        print("Applying landuse filter prior to subcentre processing...")
+        centres_gdf = ut.to_geoframe(filt_cells_with_network)
+        commercial_gdf = gpd.read_parquet(COMMERCIAL_LANDUSE_PATH)
+        industrial_gdf = gpd.read_parquet(INDUSTRIAL_LANDUSE_PATH)
+
+        filter_result = landuse_filter.run_landuse_filter(
+            centres=centres_gdf,
+            commercial=commercial_gdf,
+            industrial=industrial_gdf,
+            overlap_threshold=landuse_overlap_threshold,
+            poi_threshold=landuse_poi_threshold,
+            source=source
+        )
+
+        ut.to_parquet(pre_landuse_cells, f"{save_folder}/3_afterfill_pre_landuse.parquet")
+        pre_landuse_cells.write_parquet(f"{save_folder}/3_afterfill_pl_pre_landuse.parquet")
+        filter_result.filtered.to_parquet(Path(save_folder) / "3_afterfill_landuse_filtered.parquet")
+        filter_result.summary.to_csv(Path(save_folder) / "landuse_filter_summary.csv", index=False)
+        if not filter_result.removed_cells.empty:
+            filter_result.removed_cells.to_parquet(Path(save_folder) / "landuse_filter_removed_networks.parquet")
+        else:
+            removed_path = Path(save_folder) / "landuse_filter_removed_networks.parquet"
+            if removed_path.exists():
+                removed_path.unlink()
+        filter_result.overlap_details.to_parquet(Path(save_folder) / "landuse_filter_overlap_details.parquet")
+
+        filtered_df = filter_result.filtered.drop(columns="geometry")
+        filt_cells_with_network = pl.from_pandas(filtered_df.reset_index(drop=True))
 
     ut.to_parquet(filt_cells_with_network, f"{save_folder}/3_afterfill.parquet")
     filt_cells_with_network.write_parquet(f"{save_folder}/3_afterfill_pl.parquet")

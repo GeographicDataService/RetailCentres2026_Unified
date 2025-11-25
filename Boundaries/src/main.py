@@ -5,7 +5,6 @@ import numpy as np
 from utils import utils as ut
 from retail import retailfilter
 from retail import foursquare_qualityfilter
-from retail import landuse_filter
 from generate_networks import generate_networks
 import itertools
 import random
@@ -55,9 +54,6 @@ LANDUSE_OVERLAP_THRESHOLD = 75.0
 # Set to None to remove ALL high-overlap networks regardless of POI count
 LANDUSE_MIN_POIS_EXEMPT = 20
 
-# Paths to landuse data
-COMMERCIAL_LANDUSE_PATH = "data/input_files/commercial_landuse.parquet"
-INDUSTRIAL_LANDUSE_PATH = "data/input_files/industrial_landuse.parquet"
 # ========================================
 
 # Set random seed for reproducibility
@@ -154,29 +150,8 @@ for idx, (
         min_retail_in_network=min_retail_in_network,
         min_to_fill=min_to_fill,
         split_threshold=split_threshold,
-        merge_adjacent=merge_adjacent
+        merge_adjacent=merge_adjacent,
+        enable_landuse_filter=ENABLE_LANDUSE_FILTER,
+        landuse_overlap_threshold=LANDUSE_OVERLAP_THRESHOLD,
+        landuse_poi_threshold=LANDUSE_MIN_POIS_EXEMPT
     )
-
-    # Apply landuse filter if enabled
-    if ENABLE_LANDUSE_FILTER:
-        # Construct save folder path (same logic as in generate_networks)
-        merge_flag = "y" if merge_adjacent else "n"
-        folder_name = (
-            f"{run_name}_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
-            f"mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}"
-            f"_merge_{merge_flag}"
-        )
-        save_folder = f"data/output_files/{folder_name}"
-
-        print(f"\n{'='*80}")
-        print(f"Applying landuse filter to: {folder_name}")
-        print(f"{'='*80}\n")
-
-        landuse_filter.apply_landuse_filter_to_output(
-            save_folder=save_folder,
-            commercial_path=COMMERCIAL_LANDUSE_PATH,
-            industrial_path=INDUSTRIAL_LANDUSE_PATH,
-            overlap_threshold=LANDUSE_OVERLAP_THRESHOLD,
-            min_pois_exempt=LANDUSE_MIN_POIS_EXEMPT,
-            source=source
-        )
