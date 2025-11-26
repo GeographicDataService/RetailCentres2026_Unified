@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser(description="Generate retail networks from para
 parser.add_argument(
     "--foursquare",
     type=str,
-    default="data/input_files/uk_foursquare_datefields_admin_categories.parquet",
+    default="data/input_files/uk_foursquare_cc_nov_iceberg.parquet",
     help="Path to the input Foursquare parquet file."
 )
 parser.add_argument(
