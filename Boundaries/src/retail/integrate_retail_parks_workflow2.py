@@ -169,10 +169,7 @@ def subtract_park_cells_from_centres(
             decision = 'fully_park'
             centres_to_delete.append(network_df.copy())
 
-        elif non_park_cells < min_remainder_cells:
-            decision = 'below_cell_threshold'
-            centres_to_delete.append(network_df.copy())
-
+        # Cell count filter removed - only check POI threshold
         elif non_park_pois is not None and non_park_pois < min_remainder_pois:
             decision = 'below_poi_threshold'
             centres_to_delete.append(network_df.copy())
@@ -194,7 +191,8 @@ def subtract_park_cells_from_centres(
                         remainder_cells_only['reason'] = 'sufficient_remainder'
                         centres_to_keep.append(remainder_cells_only)
                 else:
-                    decision = 'below_cell_threshold'
+                    # No cells remain after removing parks - treat as fully park
+                    decision = 'fully_park'
                     centres_to_delete.append(network_df.copy())
             else:
                 decision = 'keep'
@@ -304,14 +302,12 @@ def subtract_park_cells_from_centres(
         poi_col: 'sum'
     }).rename(columns={'h3_11': 'cell_count', poi_col: 'poi_count'})
 
-    # Apply thresholds
-    networks_below_cell_threshold = network_stats_final[network_stats_final['cell_count'] < min_remainder_cells].index
+    # Apply thresholds (CELL THRESHOLD REMOVED - only POI threshold applies)
     networks_below_poi_threshold = network_stats_final[network_stats_final['poi_count'] < min_remainder_pois].index
-    networks_to_remove = set(networks_below_cell_threshold) | set(networks_below_poi_threshold)
+    networks_to_remove = set(networks_below_poi_threshold)
 
     if len(networks_to_remove) > 0:
         print(f"\nRemoving {len(networks_to_remove)} networks that don't meet thresholds:")
-        print(f"  Below cell threshold ({min_remainder_cells}): {len(networks_below_cell_threshold)}")
         print(f"  Below POI threshold ({min_remainder_pois}): {len(networks_below_poi_threshold)}")
 
         # Move to deleted
@@ -592,24 +588,6 @@ def main():
         help="Path to retail centres parquet (e.g., 3_afterfill.parquet or 4_finalcentres.parquet)"
     )
     parser.add_argument(
-        "--retail_landuse",
-        type=str,
-        default="data/input_files/retail_landuse.parquet",
-        help="Path to retail landuse parquet"
-    )
-    parser.add_argument(
-        "--foursquare",
-        type=str,
-        default="data/input_files/uk_foursquare_cc_nov_iceberg_fullfiltered_geo.parquet",
-        help="Path to Foursquare POIs parquet"
-    )
-    parser.add_argument(
-        "--brands",
-        type=str,
-        default="data/input_files/bl_retail_parks_brands_deduped.csv",
-        help="Path to retail park brands CSV"
-    )
-    parser.add_argument(
         "--parks",
         type=str,
         default=None,
@@ -626,12 +604,6 @@ def main():
         type=int,
         default=10,
         help="Minimum POIs required to keep centre after subtraction (default: 10)"
-    )
-    parser.add_argument(
-        "--min_park_ratio",
-        type=float,
-        default=0.02,
-        help="Minimum bigbox ratio for retail park detection (default: 0.02)"
     )
     parser.add_argument(
         "--check_connectivity",
@@ -662,20 +634,9 @@ def main():
     original_cell_count = len(centres)
 
     # Step 2: Detect or load retail parks
-    if args.parks:
-        print(f"\nLoading pre-detected retail parks from: {args.parks}")
-        retail_parks = gpd.read_parquet(args.parks)
-    else:
-        print("\nDetecting retail parks...")
-        retail_parks = identify_retail_parks(
-            retail_landuse_path=args.retail_landuse,
-            foursquare_pois_path=args.foursquare,
-            brands_csv_path=args.brands,
-            min_ratio=args.min_park_ratio,
-            min_matched_pois=1,
-            predicate="within",
-            output_path=str(output_dir / "retail_parks_detected.parquet")
-        )
+
+    print(f"\nLoading pre-detected retail parks from: {args.parks}")
+    retail_parks = gpd.read_parquet(args.parks)
 
     # Step 3: Convert parks to H3 cells
     park_cells = get_retail_park_cells(retail_parks, include_park_metadata=True)
