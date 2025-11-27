@@ -97,12 +97,12 @@ def compute_retail_park_metrics(
 
     Returns:
         retail_landuse GeoDataFrame with added columns:
-        - matched_poi_count: number of bigbox brand POIs
+        - matched_brand_count: number of UNIQUE bigbox brands (each brand counted once)
         - centre_poi_total: number of all POIs
-        - matched_to_centre_ratio: ratio of bigbox to total
-        - matched_poi_list: list of matched POI names with counts
+        - matched_to_centre_ratio: ratio of unique brands to total POIs
+        - matched_poi_list: list of matched brands with their POI counts
         - area_sqm, area_sqkm: polygon areas
-        - area_per_matched_poi_sqm: area per bigbox POI
+        - area_per_matched_brand_sqm: area per unique bigbox brand
         - area_per_total_poi_sqm: area per total POI
     """
     # Ensure CRS alignment
@@ -129,30 +129,34 @@ def compute_retail_park_metrics(
         predicate=predicate
     )
 
-    # Count matched (bigbox) POIs per polygon
-    matched_counts = joined_filtered.groupby("index_right").size()
+    # Count UNIQUE brands per polygon (not total POI count)
+    # This ensures each brand is counted only once per park
+    matched_counts = joined_filtered.groupby("index_right")["matched_brand_norm"].nunique()
 
-    # Build ordered list of "POI (count)" per polygon
-    poi_col = "name" if "name" in joined_filtered.columns else "matched_brand_text"
-    joined_filtered[poi_col] = joined_filtered[poi_col].fillna("(unknown)")
-
-    poi_lists = (
-        joined_filtered.groupby(["index_right", poi_col])
+    # Build ordered list of "brand (poi_count, unique)" per polygon
+    # Group by polygon and brand, count POIs per brand
+    brand_poi_counts = (
+        joined_filtered.groupby(["index_right", "matched_brand_norm"])
         .size()
-        .reset_index(name="count")
-        .sort_values(["index_right", "count", poi_col], ascending=[True, False, True])
+        .reset_index(name="poi_count")
+    )
+
+    # Create display list: "Brand (N POIs)"
+    poi_lists = (
+        brand_poi_counts
+        .sort_values(["index_right", "poi_count", "matched_brand_norm"], ascending=[True, False, True])
         .groupby("index_right", group_keys=False)
-        .apply(lambda df: [f"{row[poi_col]} ({row['count']})" for _, row in df.iterrows()])
+        .apply(lambda df: [f"{row['matched_brand_norm']} ({row['poi_count']} POIs)" for _, row in df.iterrows()])
     )
 
     # Centre totals from FULL set
     centre_totals = joined_all.groupby("index_right").size().astype(int)
 
     # Add metrics to retail_landuse
-    retail_landuse["matched_poi_count"] = (
+    retail_landuse["matched_brand_count"] = (
         retail_landuse.index.to_series().map(matched_counts).fillna(0).astype(int)
     )
-    retail_landuse["matched_poi_list"] = (
+    retail_landuse["matched_brand_list"] = (
         retail_landuse.index.to_series().map(poi_lists).apply(
             lambda x: x if isinstance(x, list) else []
         )
@@ -162,7 +166,7 @@ def compute_retail_park_metrics(
     )
     retail_landuse["matched_to_centre_ratio"] = np.where(
         retail_landuse["centre_poi_total"] > 0,
-        retail_landuse["matched_poi_count"] / retail_landuse["centre_poi_total"],
+        retail_landuse["matched_brand_count"] / retail_landuse["centre_poi_total"],
         0.0
     )
 
@@ -178,14 +182,14 @@ def compute_retail_park_metrics(
     retail_landuse["area_sqm"] = area_sqm
     retail_landuse["area_sqkm"] = retail_landuse["area_sqm"] / 1_000_000.0
 
-    # Area per matched POI
-    retail_landuse["area_per_matched_poi_sqm"] = np.where(
-        retail_landuse["matched_poi_count"] > 0,
-        retail_landuse["area_sqm"] / retail_landuse["matched_poi_count"],
+    # Area per matched brand
+    retail_landuse["area_per_matched_brand_sqm"] = np.where(
+        retail_landuse["matched_brand_count"] > 0,
+        retail_landuse["area_sqm"] / retail_landuse["matched_brand_count"],
         np.nan
     )
-    retail_landuse["area_per_matched_poi_sqkm"] = (
-        retail_landuse["area_per_matched_poi_sqm"] / 1_000_000.0
+    retail_landuse["area_per_matched_brand_sqkm"] = (
+        retail_landuse["area_per_matched_brand_sqm"] / 1_000_000.0
     )
 
     # Area per total POI
@@ -200,13 +204,13 @@ def compute_retail_park_metrics(
 
     # Reorder columns
     cols_front = [
-        "matched_poi_count",
+        "matched_brand_count",
         "centre_poi_total",
         "matched_to_centre_ratio",
-        "matched_poi_list",
+        "matched_brand_list",
         "area_sqm",
         "area_sqkm",
-        "area_per_matched_poi_sqm",
+        "area_per_matched_brand_sqm",
         "area_per_total_poi_sqm",
     ]
     other_cols = [c for c in retail_landuse.columns if c not in cols_front + ["geometry"]]
@@ -345,10 +349,10 @@ def identify_retail_parks(
     print()
 
     # Filter to retail parks
-    print(f"Filtering to retail parks (ratio >= {min_ratio}, matched POIs >= {min_matched_pois})...")
+    print(f"Filtering to retail parks (ratio >= {min_ratio}, matched brands >= {min_matched_pois})...")
     retail_parks = retail_landuse[
         (retail_landuse["matched_to_centre_ratio"] >= min_ratio) &
-        (retail_landuse["matched_poi_count"] >= min_matched_pois)
+        (retail_landuse["matched_brand_count"] >= min_matched_pois)
     ].copy()
 
     # Sort by ratio descending
@@ -356,7 +360,7 @@ def identify_retail_parks(
     retail_parks = retail_parks.reset_index(drop=True)
 
     print(f"  Identified retail parks: {len(retail_parks):,}")
-    print(f"  Total bigbox POIs in parks: {retail_parks['matched_poi_count'].sum():,}")
+    print(f"  Total unique brands in parks: {retail_parks['matched_brand_count'].sum():,}")
     print(f"  Total POIs in parks: {retail_parks['centre_poi_total'].sum():,}")
     print(f"  Average ratio: {retail_parks['matched_to_centre_ratio'].mean():.2%}")
     print()
@@ -461,8 +465,8 @@ def convert_retail_parks_to_h3(
 
     # Keep essential columns
     essential_cols = [
-        'park_id', 'h3_11', 'matched_poi_count', 'centre_poi_total',
-        'matched_to_centre_ratio', 'matched_poi_list', 'area_sqkm'
+        'park_id', 'h3_11', 'matched_brand_count', 'centre_poi_total',
+        'matched_to_centre_ratio', 'matched_brand_list', 'area_sqkm'
     ]
     retail_parks_h3 = retail_parks_h3[[col for col in essential_cols if col in retail_parks_h3.columns]]
 
@@ -600,7 +604,7 @@ def main():
     # Print summary statistics
     print("TOP 20 RETAIL PARKS BY BIGBOX RATIO:")
     print("-" * 80)
-    display_cols = ["matched_poi_count", "centre_poi_total", "matched_to_centre_ratio", "area_sqkm"]
+    display_cols = ["matched_brand_count", "centre_poi_total", "matched_to_centre_ratio", "area_sqkm"]
     if "name" in retail_parks.columns:
         display_cols = ["name"] + display_cols
 
