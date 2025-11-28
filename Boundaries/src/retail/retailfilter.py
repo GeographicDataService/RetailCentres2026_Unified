@@ -178,7 +178,22 @@ def filter_foursquare(foursquare):
 
     print(f"Filtered Foursquare data (remove post box): {foursquare_filt.shape[0]} rows remaining.")
 
-    
+    # Remove car dealerships miscategorized as fuel stations
+    # These are POIs with car brand names AND dealership keywords that are incorrectly categorized as fuel stations
+    car_brand_pattern = r'(?i)\b(nissan|toyota|ford|volkswagen|vw|honda|bmw|mercedes|audi|volvo|jaguar|land rover|range rover|porsche|lexus|mazda|subaru|hyundai|kia|peugeot|citroen|renault|vauxhall|seat|skoda|fiat|alfa romeo|mitsubishi|suzuki|dacia)\b'
+    dealership_keyword_pattern = r'(?i)(dealership|dealer\b|motors\b|showroom|car sales|vehicle sales)'
+
+    foursquare_filt = foursquare_filt.filter(
+        ~(
+            (pl.col("level2_category_name") == "Fuel Station") &
+            (pl.col("name").str.contains(car_brand_pattern, literal=False)) &
+            (pl.col("name").str.contains(dealership_keyword_pattern, literal=False))
+        )
+    )
+
+    print(f"Filtered Foursquare data (remove dealership fuel stations): {foursquare_filt.shape[0]} rows remaining.")
+
+
 
        # Identify rows where name is just a British name
 # Apply the function to create a boolean mask

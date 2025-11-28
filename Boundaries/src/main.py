@@ -5,6 +5,7 @@ import numpy as np
 from utils import utils as ut
 from retail import retailfilter
 from retail import foursquare_qualityfilter
+from retail import retail_landuse_poi_filter
 from generate_networks import generate_networks
 import itertools
 import random
@@ -77,6 +78,15 @@ LANDUSE_OVERLAP_THRESHOLD = 75.0
 LANDUSE_MIN_POIS_EXEMPT = 20
 
 # ========================================
+# RETAIL LANDUSE POI FILTER CONFIGURATION
+# ========================================
+# Filter retail land use polygons by POI count before network generation
+FILTER_RETAIL_LANDUSE = True
+
+# Minimum POIs required in a retail land use polygon to keep it
+MIN_POIS_PER_LANDUSE_POLYGON = 1
+
+# ========================================
 
 # Set random seed for reproducibility
 seed = 505
@@ -144,9 +154,18 @@ overture = ut.add_h3_11_column(overture)
 foursquare_cells = ut.agg_to_cells_foursquare(foursquare)
 overture_cells = ut.agg_to_cells(overture)
 
-# Load land use data
-land_use_cells = pd.read_parquet("data/input_files/retail_landuse_h3_geo.parquet")
-land_use_cells = pl.DataFrame(land_use_cells)
+# Load and filter land use data
+if FILTER_RETAIL_LANDUSE:
+    land_use_cells = retail_landuse_poi_filter.filter_retail_landuse_by_pois(
+        foursquare=foursquare,
+        min_pois_per_polygon=MIN_POIS_PER_LANDUSE_POLYGON,
+        save_intermediates=True
+    )
+else:
+    print("\nSkipping retail land use POI filtering (disabled)")
+    land_use_cells = pd.read_parquet("data/input_files/retail_landuse_h3_geo.parquet")
+    land_use_cells = pl.DataFrame(land_use_cells)
+
 combined = ut.create_combined_table(foursquare_cells, overture_cells, land_use_cells)
 
 for idx, (

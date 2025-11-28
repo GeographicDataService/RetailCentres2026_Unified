@@ -173,8 +173,9 @@ def subtract_park_cells_from_centres(
         elif non_park_cells == 0:
             decision = 'fully_park'
             # All cells already in parks - just track for stats
-            network_df['merge_reason'] = 'fully_park'
-            centres_to_merge.append(network_df.copy())
+            network_copy = network_df.copy()
+            network_copy['merge_reason'] = 'fully_park'
+            centres_to_merge.append(network_copy)
 
         else:
             # ALWAYS split into connected components first (Workflow 3 logic)
@@ -183,8 +184,9 @@ def subtract_park_cells_from_centres(
             if len(remainder_cells_only) == 0:
                 # No cells remain after removing parks - merge into park
                 decision = 'fully_park'
-                network_df['merge_reason'] = 'fully_park'
-                centres_to_merge.append(network_df.copy())
+                network_copy = network_df.copy()
+                network_copy['merge_reason'] = 'fully_park'
+                centres_to_merge.append(network_copy)
             else:
                 # Check if remainder is connected
                 is_connected = check_network_connectivity(remainder_cells_only)
@@ -254,7 +256,7 @@ def subtract_park_cells_from_centres(
 
                 # Add all components (threshold check comes later)
                 for component_id in split_network['network_number'].unique():
-                    component = split_network[split_network['network_number'] == component_id]
+                    component = split_network[split_network['network_number'] == component_id].copy()
                     component_cells = len(component)
 
                     # Get POI count
@@ -565,7 +567,7 @@ def create_retail_park_networks(
     print("="*80)
 
     # Combine park cells with geometry
-    park_cells_geo = ut.to_geoframe(park_cells)
+    park_cells_geo = ut.to_geoframe(park_cells).copy()
 
     # Assign network numbers to parks based on park_id
     if 'park_id' in park_cells_geo.columns:
@@ -598,6 +600,10 @@ def create_polygon_outputs(
     print("\n" + "="*80)
     print("CREATING POLYGON OUTPUTS")
     print("="*80)
+
+    # Make copies to avoid modifying originals
+    centres_kept = centres_kept.copy()
+    park_networks = park_networks.copy()
 
     # Standardize POI count columns
     if 'poi_count' not in centres_kept.columns:
