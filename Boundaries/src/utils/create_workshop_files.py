@@ -9,6 +9,7 @@ Creates 4 variants:
 
 Also creates:
 5. filtered_pois.gpkg - POI data with just name and full category
+6. retail_parks.gpkg - Retail park polygons with all attributes (optional)
 """
 
 import geopandas as gpd
@@ -177,6 +178,30 @@ def create_filtered_pois(poi_path: str, output_dir: str = "data/forarcgis"):
     print("\nFiltered POI geopackage created successfully!")
 
 
+def create_retail_parks_gpkg(retail_parks_path: str, output_dir: str = "data/forarcgis"):
+    """Create retail parks geopackage with all attributes."""
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("\nCreating retail parks geopackage...")
+    print(f"Loading retail parks from {retail_parks_path}...")
+    retail_parks = gpd.read_parquet(retail_parks_path)
+    print(f"  Loaded {len(retail_parks)} retail parks")
+
+    # Sanitize column names for ArcGIS compatibility
+    print("  Sanitizing column names for ArcGIS Online...")
+    retail_parks = sanitize_column_names(retail_parks)
+
+    # Save to GPKG
+    output_path = output_dir / "retail_parks.gpkg"
+    retail_parks.to_file(output_path, driver="GPKG", layer="retail_parks")
+    print(f"  Saved to {output_path}")
+    print(f"  Columns: {list(retail_parks.columns)}")
+
+    print("\nRetail parks geopackage created successfully!")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Create postworkshopcentres GPKG files and filtered POI geopackage"
@@ -197,6 +222,11 @@ if __name__ == "__main__":
         help="Path to filtered POI geoparquet file"
     )
     parser.add_argument(
+        "--retail-parks",
+        required=False,
+        help="Path to retail_parks_polygons.parquet (optional)"
+    )
+    parser.add_argument(
         "--output-dir",
         default="data/forarcgis",
         help="Output directory (default: data/forarcgis)"
@@ -213,6 +243,10 @@ if __name__ == "__main__":
 
     # Create filtered POI file
     create_filtered_pois(args.pois, args.output_dir)
+
+    # Create retail parks file (if provided)
+    if args.retail_parks:
+        create_retail_parks_gpkg(args.retail_parks, args.output_dir)
 
     print("\n" + "="*80)
     print("ALL FILES CREATED SUCCESSFULLY!")
