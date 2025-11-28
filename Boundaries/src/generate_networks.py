@@ -214,6 +214,14 @@ def generate_networks(
             print(f"\n  Final centres (no parks): {centres_kept['network_number'].nunique()} networks, {len(centres_kept)} cells")
             print(f"  Retail parks: {park_networks['network_number'].nunique()} networks, {len(park_networks)} cells")
 
+            # Create dissolved polygon outputs
+            print("\nCreating dissolved polygon outputs...")
+            retail_park_integration.create_polygon_outputs(
+                centres_kept=centres_kept,
+                park_networks=park_networks,
+                output_dir=Path(save_folder)
+            )
+
             # Convert centres back to polars for continued processing
             centres_kept_df = centres_kept.drop(columns='geometry')
             filt_cells_with_network = pl.from_pandas(centres_kept_df.reset_index(drop=True))
