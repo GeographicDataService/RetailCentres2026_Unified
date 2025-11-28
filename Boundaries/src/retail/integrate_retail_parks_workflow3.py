@@ -103,7 +103,6 @@ def get_retail_park_cells(
 def subtract_park_cells_from_centres(
     centres: gpd.GeoDataFrame,
     park_cells: pd.DataFrame,
-    min_remainder_cells: int = 3,
     min_remainder_pois: int = 10,
     check_connectivity: bool = True
 ) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame]:
@@ -119,7 +118,6 @@ def subtract_park_cells_from_centres(
     Args:
         centres: GeoDataFrame of retail centre cells
         park_cells: DataFrame of retail park H3 cells
-        min_remainder_cells: Minimum cells required to keep centre after subtraction
         min_remainder_pois: Minimum POIs required to keep centre after subtraction
         check_connectivity: If True, split centres that become disconnected
 
@@ -713,12 +711,6 @@ def main():
         help="Optional: Path to pre-detected retail parks parquet (skip detection)"
     )
     parser.add_argument(
-        "--min_remainder_cells",
-        type=int,
-        default=3,
-        help="Minimum cells required to keep centre after subtraction (default: 3)"
-    )
-    parser.add_argument(
         "--min_remainder_pois",
         type=int,
         default=10,
@@ -764,7 +756,6 @@ def main():
     centres_kept, centres_merged, summary_df, updated_park_cells = subtract_park_cells_from_centres(
         centres=centres,
         park_cells=park_cells,
-        min_remainder_cells=args.min_remainder_cells,
         min_remainder_pois=args.min_remainder_pois,
         check_connectivity=args.check_connectivity
     )

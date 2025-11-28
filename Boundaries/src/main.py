@@ -39,6 +39,28 @@ parser.add_argument(
     default="data/POI_files/quality_filter_ids.parquet",
     help="Path to save/load quality filter IDs."
 )
+parser.add_argument(
+    "--detect_retail_parks",
+    action="store_true",
+    help="Detect retail parks from centres before subcentre detection."
+)
+parser.add_argument(
+    "--integrate_retail_parks",
+    action="store_true",
+    help="Integrate retail parks (workflow 3): merge small remainder centres into adjacent parks."
+)
+parser.add_argument(
+    "--retail_parks_path",
+    type=str,
+    default=None,
+    help="Path to pre-detected retail parks parquet file (if not detecting)."
+)
+parser.add_argument(
+    "--min_remainder_pois",
+    type=int,
+    default=10,
+    help="Minimum POIs required to keep centre after park subtraction (default: 10)."
+)
 args = parser.parse_args()
 
 # ========================================
@@ -153,5 +175,9 @@ for idx, (
         merge_adjacent=merge_adjacent,
         enable_landuse_filter=ENABLE_LANDUSE_FILTER,
         landuse_overlap_threshold=LANDUSE_OVERLAP_THRESHOLD,
-        landuse_poi_threshold=LANDUSE_MIN_POIS_EXEMPT
+        landuse_poi_threshold=LANDUSE_MIN_POIS_EXEMPT,
+        detect_retail_parks=args.detect_retail_parks,
+        integrate_retail_parks=args.integrate_retail_parks,
+        retail_parks_path=args.retail_parks_path,
+        min_remainder_pois=args.min_remainder_pois
     )

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
 import geopandas as gpd
 import polars as pl
 
@@ -11,6 +12,7 @@ from retail import find_subcentres
 from retail import landuse_filter
 from retail import manual_edits
 from retail import network_merger
+from retail import integrate_retail_parks_workflow3 as retail_park_integration
 
 
 COMMERCIAL_LANDUSE_PATH = Path("data/input_files/commercial_landuse.parquet")
@@ -28,7 +30,11 @@ def generate_networks(
     merge_adjacent: bool = True,
     enable_landuse_filter: bool = False,
     landuse_overlap_threshold: float = 75.0,
-    landuse_poi_threshold: Optional[int] = 20
+    landuse_poi_threshold: Optional[int] = 20,
+    detect_retail_parks: bool = False,
+    integrate_retail_parks: bool = False,
+    retail_parks_path: Optional[str] = None,
+    min_remainder_pois: int = 10
 ) -> None:
     """
     Creates and processes retail centre networks from a combined Polars DataFrame.
@@ -140,6 +146,78 @@ def generate_networks(
             filt_cells_with_network, input_cells
         )
 
+    # ----------------------------------------
+    # Retail Park Integration (optional)
+    # ----------------------------------------
+    park_networks = None
+    if detect_retail_parks or integrate_retail_parks:
+        print("\n" + "="*80)
+        print("RETAIL PARK INTEGRATION")
+        print("="*80)
+
+        centres_gdf = ut.to_geoframe(filt_cells_with_network)
+
+        # Step 1: Detect or load retail parks
+        if detect_retail_parks:
+            print("\nDetecting retail parks...")
+            retail_parks = retail_park_integration.detect_retail_parks_broad_definition(
+                centres_gdf,
+                min_brand_count=3,
+                min_brands_unique=2
+            )
+            # Save detected parks
+            retail_parks.to_parquet(f"{save_folder}/detected_retail_parks.parquet")
+            park_cells = retail_park_integration.get_retail_park_cells(retail_parks, include_park_metadata=True)
+            park_cells.to_parquet(f"{save_folder}/retail_park_cells.parquet")
+            print(f"  Detected {retail_parks['park_id'].nunique()} retail parks")
+        elif retail_parks_path:
+            print(f"\nLoading retail parks from: {retail_parks_path}")
+            park_cells = gpd.read_parquet(retail_parks_path)
+            print(f"  Loaded {park_cells['park_id'].nunique()} retail parks")
+        else:
+            print("\nWarning: integrate_retail_parks=True but no parks detected or provided")
+            park_cells = None
+
+        # Step 2: Integrate parks (workflow 3)
+        if integrate_retail_parks and park_cells is not None:
+            print("\nIntegrating retail parks (Workflow 3: merge small remainders)...")
+
+            centres_kept, centres_merged, summary_df, updated_park_cells = (
+                retail_park_integration.subtract_park_cells_from_centres(
+                    centres=centres_gdf,
+                    park_cells=park_cells,
+                    min_remainder_pois=min_remainder_pois,
+                    check_connectivity=True
+                )
+            )
+
+            # Create park networks
+            starting_park_id = centres_gdf['network_number'].max() + 1000 if len(centres_gdf) > 0 else 1000
+            park_networks_raw = retail_park_integration.create_retail_park_networks(
+                park_cells=updated_park_cells,
+                centres_deleted=centres_merged,
+                starting_network_id=starting_park_id
+            )
+
+            # Join park networks with input_cells to calculate category aggregations
+            # (same as done for centres)
+            park_networks_df = park_networks_raw.drop(columns='geometry')
+            park_networks_pl = pl.from_pandas(park_networks_df.reset_index(drop=True))
+            park_networks_pl = ut.join_networks_with_cells(park_networks_pl, input_cells)
+            park_networks = ut.to_geoframe(park_networks_pl)
+
+            # Save integration outputs
+            centres_kept.to_parquet(f"{save_folder}/centres_no_parks.parquet")
+            park_networks.to_parquet(f"{save_folder}/retail_parks_integrated.parquet")
+            summary_df.to_csv(f"{save_folder}/retail_park_integration_summary.csv", index=False)
+
+            print(f"\n  Final centres (no parks): {centres_kept['network_number'].nunique()} networks, {len(centres_kept)} cells")
+            print(f"  Retail parks: {park_networks['network_number'].nunique()} networks, {len(park_networks)} cells")
+
+            # Convert centres back to polars for continued processing
+            centres_kept_df = centres_kept.drop(columns='geometry')
+            filt_cells_with_network = pl.from_pandas(centres_kept_df.reset_index(drop=True))
+
     pre_landuse_cells = filt_cells_with_network.clone()
 
     if enable_landuse_filter and filt_cells_with_network.height > 0:
@@ -225,12 +303,43 @@ def generate_networks(
         ["network_number", "geometry", f"total_{source}_count", "trackNodes", 'Retail',
          'Dining and Drinking', 'Leisure & Travel', 'Community & Health', 'category_names']
     ]
-    dissolved_gdf["network_number"] = (
-        dissolved_gdf[f"total_{source}_count"]
+
+    # ----------------------------------------
+    # Add retail parks to final centres (if integrated)
+    # ----------------------------------------
+    if park_networks is not None:
+        print("\nAdding retail parks to final centres...")
+
+        # Dissolve park networks the same way as centres
+        # (park_networks already has all required columns from join_networks_with_cells)
+        park_dissolved = ut.dissolve_to_centres(park_networks)
+        park_dissolved["geometry"] = park_dissolved["geometry"].apply(lambda geom: ut.fill_holes(geom))
+        park_dissolved_gdf = gpd.GeoDataFrame(
+            park_dissolved, geometry="geometry", crs="EPSG:27700"
+        )
+        park_dissolved_gdf = park_dissolved_gdf[
+            ["network_number", "geometry", f"total_{source}_count", "trackNodes", 'Retail',
+             'Dining and Drinking', 'Leisure & Travel', 'Community & Health', 'category_names']
+        ]
+
+        # Add centre_type flag
+        dissolved_gdf['centre_type'] = 'centre'
+        park_dissolved_gdf['centre_type'] = 'retail_park'
+
+        # Combine centres and parks
+        dissolved_combined = pd.concat([dissolved_gdf, park_dissolved_gdf], ignore_index=True)
+        print(f"  Combined: {len(dissolved_gdf)} centres + {len(park_dissolved_gdf)} parks = {len(dissolved_combined)} total")
+    else:
+        dissolved_combined = dissolved_gdf
+        dissolved_combined['centre_type'] = 'centre'
+
+    # Rank by POI count
+    dissolved_combined["network_number"] = (
+        dissolved_combined[f"total_{source}_count"]
         .rank(method="first", ascending=False)
         .astype(int)
     )
-    dissolved_gdf = dissolved_gdf.rename(
+    dissolved_combined = dissolved_combined.rename(
         columns={
             "network_number": "RC_ID",
             f"total_{source}_count": "Total_POI_count",
@@ -238,12 +347,12 @@ def generate_networks(
         }
     )
 
-    dissolved_gdf.to_parquet(f"{save_folder}/4_finalcentres.parquet")
+    dissolved_combined.to_parquet(f"{save_folder}/4_finalcentres.parquet")
 
     # ----------------------------------------
     # Add local authority names to final centres
     # ----------------------------------------
     dissolved_gdf_las = centre_postprocessing.add_localauthorities_to_centres(
-        dissolved_gdf
+        dissolved_combined
     )
     dissolved_gdf_las.to_parquet(f"{save_folder}/4_finalcentres_las.parquet")
