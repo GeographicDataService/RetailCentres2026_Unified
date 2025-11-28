@@ -582,6 +582,108 @@ def create_retail_park_networks(
     return park_cells_geo
 
 
+def dissolve_to_polygons_with_metadata(park_networks: gpd.GeoDataFrame, name: str) -> gpd.GeoDataFrame:
+    """
+    Dissolve retail park cells to polygons, preserving brand matching metadata.
+
+    Aggregates:
+    - matched_brand_count (max across cells)
+    - matched_brand_list (combined list from all cells)
+    - matched_to_centre_ratio (average)
+    - poi_count (sum)
+    - cell_count (count)
+    """
+    from shapely.geometry import Polygon, MultiPolygon
+    from collections import Counter
+
+    print(f"\n{name}...")
+
+    # Get unique park identifiers (park_id or network_number)
+    if 'park_id' in park_networks.columns:
+        group_col = 'park_id'
+    else:
+        group_col = 'network_number'
+
+    # Standardize POI count column
+    if 'poi_count' not in park_networks.columns:
+        if 'centre_poi_total' in park_networks.columns:
+            park_networks['poi_count'] = park_networks['centre_poi_total']
+        else:
+            park_networks['poi_count'] = 0
+
+    # Build aggregation dict
+    agg_dict = {
+        'h3_11': 'count',
+        'poi_count': 'sum',
+    }
+
+    # Add optional brand metadata columns if they exist
+    if 'matched_brand_count' in park_networks.columns:
+        agg_dict['matched_brand_count'] = 'max'  # Max brands seen in any cell
+    if 'matched_to_centre_ratio' in park_networks.columns:
+        agg_dict['matched_to_centre_ratio'] = 'mean'  # Average ratio
+
+    # Compute stats before dissolving
+    network_stats = park_networks.groupby(group_col).agg(agg_dict).rename(
+        columns={'h3_11': 'cell_count'}
+    )
+
+    # Aggregate brand lists - take first non-empty list per park
+    # (all cells from same park should have same brand list from original detection)
+    if 'matched_brand_list' in park_networks.columns:
+        def get_first_nonempty_list(lists):
+            """Get first non-empty brand list."""
+            for brand_list in lists:
+                if isinstance(brand_list, list) and len(brand_list) > 0:
+                    return brand_list
+            return []
+
+        brand_lists_agg = park_networks.groupby(group_col)['matched_brand_list'].apply(get_first_nonempty_list)
+        network_stats['matched_brand_list'] = brand_lists_agg
+
+    # Dissolve geometries
+    dissolved = park_networks.dissolve(by=group_col)
+
+    # Add stats
+    dissolved = dissolved.join(network_stats, rsuffix='_stats')
+
+    # Clean up columns
+    columns_to_keep = ['cell_count', 'poi_count', 'geometry']
+    if 'matched_brand_count_stats' in dissolved.columns:
+        dissolved['matched_brand_count'] = dissolved['matched_brand_count_stats']
+        columns_to_keep.append('matched_brand_count')
+    if 'matched_to_centre_ratio_stats' in dissolved.columns:
+        dissolved['matched_to_centre_ratio'] = dissolved['matched_to_centre_ratio_stats']
+        columns_to_keep.append('matched_to_centre_ratio')
+    if 'matched_brand_list' in dissolved.columns:
+        columns_to_keep.append('matched_brand_list')
+
+    dissolved['centre_type'] = 'retail_park'
+    columns_to_keep.insert(0, 'centre_type')
+
+    dissolved = dissolved[[col for col in columns_to_keep if col in dissolved.columns]]
+
+    # Fill holes
+    def fill_holes(geom):
+        if geom.geom_type == 'Polygon':
+            return Polygon(geom.exterior)
+        elif geom.geom_type == 'MultiPolygon':
+            return MultiPolygon([Polygon(p.exterior) for p in geom.geoms])
+        return geom
+
+    dissolved['geometry'] = dissolved['geometry'].apply(fill_holes)
+
+    # Add area
+    dissolved_27700 = dissolved.to_crs('EPSG:27700')
+    dissolved['area_sqm'] = dissolved_27700.geometry.area
+    dissolved['area_sqkm'] = dissolved['area_sqm'] / 1_000_000
+
+    dissolved = dissolved.reset_index()
+    dissolved = dissolved.sort_values('poi_count', ascending=False)
+
+    return dissolved
+
+
 def create_polygon_outputs(
     centres_kept: gpd.GeoDataFrame,
     park_networks: gpd.GeoDataFrame,
@@ -591,7 +693,7 @@ def create_polygon_outputs(
     Create dissolved polygon outputs for visualization and analysis.
 
     Creates three files:
-    1. retail_parks_polygons.parquet - Retail parks only
+    1. retail_parks_polygons.parquet - Retail parks only (with brand metadata)
     2. split_centres_polygons.parquet - Split retail centres only
     3. final_centres_and_parks_polygons.parquet - Combined
     """
@@ -665,8 +767,8 @@ def create_polygon_outputs(
 
         return dissolved
 
-    # 1. Retail parks polygons
-    parks_polygons = dissolve_to_polygons(park_networks, "Retail Parks")
+    # 1. Retail parks polygons (with brand matching metadata)
+    parks_polygons = dissolve_to_polygons_with_metadata(park_networks, "Retail Parks")
     parks_output = output_dir / 'retail_parks_polygons.parquet'
     parks_polygons.to_parquet(parks_output)
     print(f"  Saved: {parks_output}")
