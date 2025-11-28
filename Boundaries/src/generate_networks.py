@@ -112,21 +112,22 @@ def generate_networks(
     )
 
     # ----------------------------------------
-    # Merge networks separated by one cell (optional) if one of the networks has <10 tracknodes
+    # Merge networks - SKIPPED (will merge after retail parks & landuse filter)
     # ----------------------------------------
-    if merge_adjacent:
-        filt_cells_with_network = network_merger.merge_networks_separated_by_one_cell(
-            filt_cells_with_network, merge_h3_threshold= 10
-        )
-        filt_cells_with_network = ut.join_networks_with_cells(
-            filt_cells_with_network, input_cells
-        )
-    
-        n_networks = filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]
-        print(
-            "Number of networks after merging adjacent: "
-            f"{n_networks}"
-        )
+    # Commented out - merge happens after filters now
+    # if merge_adjacent:
+    #     filt_cells_with_network = network_merger.merge_networks_separated_by_one_cell(
+    #         filt_cells_with_network, merge_h3_threshold= 10
+    #     )
+    #     filt_cells_with_network = ut.join_networks_with_cells(
+    #         filt_cells_with_network, input_cells
+    #     )
+
+    #     n_networks = filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]
+    #     print(
+    #         "Number of networks after merging adjacent: "
+    #         f"{n_networks}"
+    #     )
 
     ut.to_parquet(
         filt_cells_with_network,
@@ -262,6 +263,29 @@ def generate_networks(
 
         filtered_df = filter_result.filtered.drop(columns="geometry")
         filt_cells_with_network = pl.from_pandas(filtered_df.reset_index(drop=True))
+
+    # ----------------------------------------
+    # Merge networks AFTER retail parks & landuse filter
+    # ----------------------------------------
+    if merge_adjacent:
+        print("\n" + "="*80)
+        print("MERGING ADJACENT NETWORKS (AFTER FILTERS)")
+        print("="*80)
+
+        n_networks_before = filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]
+        print(f"Networks before merge: {n_networks_before}")
+
+        filt_cells_with_network = network_merger.merge_networks_separated_by_one_cell(
+            filt_cells_with_network, merge_h3_threshold=10
+        )
+        filt_cells_with_network = ut.join_networks_with_cells(
+            filt_cells_with_network, input_cells
+        )
+
+        n_networks_after = filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]
+        print(f"Networks after merge: {n_networks_after}")
+        print(f"Networks merged: {n_networks_before - n_networks_after}")
+        print("="*80 + "\n")
 
     ut.to_parquet(filt_cells_with_network, f"{save_folder}/3_afterfill.parquet")
     filt_cells_with_network.write_parquet(f"{save_folder}/3_afterfill_pl.parquet")
