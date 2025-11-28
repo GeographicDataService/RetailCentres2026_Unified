@@ -14,6 +14,50 @@ Also creates:
 import geopandas as gpd
 import argparse
 from pathlib import Path
+import re
+
+
+def sanitize_column_names(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Sanitize column names for ArcGIS Online compatibility.
+
+    Rules:
+    - Must start with a letter
+    - Only letters, numbers, and underscores
+    - No spaces or special characters
+    - Max 64 characters
+    """
+    gdf = gdf.copy()
+
+    rename_map = {}
+    for col in gdf.columns:
+        if col == 'geometry':
+            continue
+
+        # Replace special characters and spaces with underscores
+        new_col = re.sub(r'[^a-zA-Z0-9_]', '_', col)
+
+        # Remove leading/trailing underscores
+        new_col = new_col.strip('_')
+
+        # Ensure starts with letter
+        if new_col and not new_col[0].isalpha():
+            new_col = 'col_' + new_col
+
+        # Remove consecutive underscores
+        new_col = re.sub(r'_+', '_', new_col)
+
+        # Truncate to 64 characters
+        new_col = new_col[:64]
+
+        if new_col != col:
+            rename_map[col] = new_col
+            print(f"  Renamed: '{col}' -> '{new_col}'")
+
+    if rename_map:
+        gdf = gdf.rename(columns=rename_map)
+
+    return gdf
 
 
 def create_workshop_centres(
@@ -34,6 +78,11 @@ def create_workshop_centres(
     # Load centres without splits (splitthresh_99999)
     centres_nosplit = gpd.read_parquet(nosplit_centres_path)
     print(f"  Loaded {len(centres_nosplit)} centres without splits")
+
+    # Sanitize column names for ArcGIS compatibility
+    print("\nSanitizing column names for ArcGIS Online...")
+    centres_split = sanitize_column_names(centres_split)
+    centres_nosplit = sanitize_column_names(centres_nosplit)
 
     # 1. postworkshopcentres.gpkg - with splits, with category_names
     print("\n1. Creating postworkshopcentres.gpkg (with splits, with category_names)...")
@@ -114,6 +163,9 @@ def create_filtered_pois(poi_path: str, output_dir: str = "data/forarcgis"):
     # Rename category column to 'category'
     if category_col:
         filtered_pois = filtered_pois.rename(columns={category_col: 'category'})
+
+    # Sanitize column names
+    filtered_pois = sanitize_column_names(filtered_pois)
 
     print(f"  Filtered to {len(filtered_pois)} POIs with columns: {list(filtered_pois.columns)}")
 

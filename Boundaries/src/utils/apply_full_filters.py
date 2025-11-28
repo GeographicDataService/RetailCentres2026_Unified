@@ -14,7 +14,7 @@ from retail import retailfilter
 from retail import foursquare_qualityfilter
 
 
-def apply_full_filters(input_path: str, output_path: str, save_quality_ids: bool = False):
+def apply_full_filters(input_path: str, output_path: str, save_quality_ids: bool = False, use_saved_ids: bool = False):
     """Apply quality filter and retail filter to POI data (in that order)."""
 
     print(f"Loading base POI file from {input_path}...")
@@ -25,11 +25,21 @@ def apply_full_filters(input_path: str, output_path: str, save_quality_ids: bool
     print("\n" + "="*80)
     print("STAGE 1: Quality Filter")
     print("="*80)
-    foursquare_filtered_pl = foursquare_qualityfilter.filter_foursquare_quality(
-        foursquare_pl,
-        save_filter_ids=save_quality_ids,
-        filter_ids_path="data/POI_files/quality_filter_ids.parquet"
-    )
+
+    if use_saved_ids:
+        # Use presaved filter IDs for fast filtering
+        foursquare_filtered_pl = foursquare_qualityfilter.load_and_apply_presaved_filters(
+            foursquare_pl,
+            filter_ids_path="data/POI_files/quality_filter_ids.parquet"
+        )
+    else:
+        # Run full quality filter pipeline
+        foursquare_filtered_pl = foursquare_qualityfilter.filter_foursquare_quality(
+            foursquare_pl,
+            save_filter_ids=save_quality_ids,
+            filter_ids_path="data/POI_files/quality_filter_ids.parquet"
+        )
+
     print(f"  After quality filter: {len(foursquare_filtered_pl)} POIs")
     print(f"  Removed: {len(foursquare_pl) - len(foursquare_filtered_pl)} POIs")
 
@@ -79,7 +89,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Save quality filter IDs to quality_filter_ids.parquet"
     )
+    parser.add_argument(
+        "--use-saved-ids",
+        action="store_true",
+        help="Use presaved quality filter IDs (faster, requires prior run with --save-quality-ids)"
+    )
 
     args = parser.parse_args()
 
-    apply_full_filters(args.input, args.output, args.save_quality_ids)
+    apply_full_filters(args.input, args.output, args.save_quality_ids, args.use_saved_ids)
