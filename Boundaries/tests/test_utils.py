@@ -21,7 +21,6 @@ def test_join_networks_with_cells():
     input_cells = pl.DataFrame(
         {
             "h3_11": ["8928308280fffff", "8928308280bffff", "89283082807ffff"],
-            "overture_count": [5, 3, 2],
             "foursquare_count": [10, 8, 6],
             "retail_landuse": [True, False, True],
         }
@@ -32,10 +31,8 @@ def test_join_networks_with_cells():
         {
             "h3_11": ["8928308280fffff", "8928308280bffff", "89283082807ffff", "8928308281fffff"],
             "network_number": [1, 1, 2,5],
-            "overture_count": [5, 3, 2, 0],
             "foursquare_count": [10, 8, 6, 0],
             "retail_landuse": [True, False, True, False],
-            "total_overture_count": [8, 8, 2,0],
             "total_foursquare_count": [18, 18, 6,0 ],
             "trackNodes": [2, 2, 1,1]
         }

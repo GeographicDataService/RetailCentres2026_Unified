@@ -82,7 +82,6 @@ def add_cells_manually(df: pl.DataFrame) -> pl.DataFrame:
     df = df.with_columns(
         [
             pl.col("foursquare_count").fill_null(0),
-            pl.col("overture_count").fill_null(0),
             pl.col("retail_landuse").fill_null(False),
             pl.col("manually_added").fill_null(False),
         ]

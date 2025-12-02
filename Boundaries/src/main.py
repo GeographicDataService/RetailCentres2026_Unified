@@ -1,4 +1,5 @@
 import argparse
+from tkinter import TRUE
 import polars as pl
 import pandas as pd
 import numpy as np
@@ -40,28 +41,6 @@ parser.add_argument(
     default="data/POI_files/quality_filter_ids.parquet",
     help="Path to save/load quality filter IDs."
 )
-parser.add_argument(
-    "--detect_retail_parks",
-    action="store_true",
-    help="Detect retail parks from centres before subcentre detection."
-)
-parser.add_argument(
-    "--integrate_retail_parks",
-    action="store_true",
-    help="Integrate retail parks (workflow 3): merge small remainder centres into adjacent parks."
-)
-parser.add_argument(
-    "--retail_parks_path",
-    type=str,
-    default=None,
-    help="Path to pre-detected retail parks parquet file (if not detecting)."
-)
-parser.add_argument(
-    "--min_remainder_pois",
-    type=int,
-    default=10,
-    help="Minimum POIs required to keep centre after park subtraction (default: 10)."
-)
 args = parser.parse_args()
 
 # ========================================
@@ -82,6 +61,19 @@ LANDUSE_MIN_POIS_EXEMPT = 20
 # ========================================
 # Filter retail land use polygons by POI count before network generation
 FILTER_RETAIL_LANDUSE = True
+
+# Minimum POIs required in a retail land use polygon to keep it
+MIN_POIS_PER_LANDUSE_POLYGON = 1
+
+# ========================================
+
+# ========================================
+# RETAIL PARKS INTEGRATION CONFIGURATION
+# ========================================
+
+INTEGRATE_RETAIL_PARKS = TRUE
+RETAIL_PARKS_PATH = "data/output_files/retail_parks_h3_cells.parquet"
+MIN_REMAINDER_POIS = 10
 
 # Minimum POIs required in a retail land use polygon to keep it
 MIN_POIS_PER_LANDUSE_POLYGON = 1
@@ -119,7 +111,6 @@ total_combos = len(param_combinations_list)
 print(f"Total combinations: {total_combos}")
 
 foursquare = pl.read_parquet(args.foursquare)
-overture = pl.read_parquet("data/input_files/poi_uk_overture_proc.parquet")
 
 # Apply quality filters (closed venues, defunct retailers, UK boundary)
 if args.use_presaved_filters:
@@ -138,8 +129,6 @@ else:
 
 # Apply category filters
 foursquare = retailfilter.filter_foursquare(foursquare)
-overture = retailfilter.filter_overture(overture)
-
 (
     foursquare
     .select(pl.col("fsq_category_labels").explode().alias("category"))
@@ -149,10 +138,7 @@ overture = retailfilter.filter_overture(overture)
 )
 
 foursquare = ut.add_h3_11_column(foursquare)
-overture = ut.add_h3_11_column(overture)
-
 foursquare_cells = ut.agg_to_cells_foursquare(foursquare)
-overture_cells = ut.agg_to_cells(overture)
 
 # Load and filter land use data
 if FILTER_RETAIL_LANDUSE:
@@ -166,7 +152,7 @@ else:
     land_use_cells = pd.read_parquet("data/input_files/retail_landuse_h3_geo.parquet")
     land_use_cells = pl.DataFrame(land_use_cells)
 
-combined = ut.create_combined_table(foursquare_cells, overture_cells, land_use_cells)
+combined = ut.create_combined_table(foursquare_cells, land_use_cells)
 
 for idx, (
     source,
@@ -195,8 +181,7 @@ for idx, (
         enable_landuse_filter=ENABLE_LANDUSE_FILTER,
         landuse_overlap_threshold=LANDUSE_OVERLAP_THRESHOLD,
         landuse_poi_threshold=LANDUSE_MIN_POIS_EXEMPT,
-        detect_retail_parks=args.detect_retail_parks,
-        integrate_retail_parks=args.integrate_retail_parks,
-        retail_parks_path=args.retail_parks_path,
-        min_remainder_pois=args.min_remainder_pois
+        integrate_retail_parks=INTEGRATE_RETAIL_PARKS,
+        retail_parks_path=RETAIL_PARKS_PATH,
+        min_remainder_pois=MIN_REMAINDER_POIS
     )

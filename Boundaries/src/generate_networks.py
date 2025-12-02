@@ -31,7 +31,6 @@ def generate_networks(
     enable_landuse_filter: bool = False,
     landuse_overlap_threshold: float = 75.0,
     landuse_poi_threshold: Optional[int] = 20,
-    detect_retail_parks: bool = False,
     integrate_retail_parks: bool = False,
     retail_parks_path: Optional[str] = None,
     min_remainder_pois: int = 10
@@ -151,33 +150,17 @@ def generate_networks(
     # Retail Park Integration (optional)
     # ----------------------------------------
     park_networks = None
-    if detect_retail_parks or integrate_retail_parks:
-        print("\n" + "="*80)
-        print("RETAIL PARK INTEGRATION")
-        print("="*80)
-
+    if integrate_retail_parks:
         centres_gdf = ut.to_geoframe(filt_cells_with_network)
-
-        # Step 1: Detect or load retail parks
-        if detect_retail_parks:
-            print("\nDetecting retail parks...")
-            retail_parks = retail_park_integration.detect_retail_parks_broad_definition(
-                centres_gdf,
-                min_brand_count=3,
-                min_brands_unique=2
-            )
-            # Save detected parks
-            retail_parks.to_parquet(f"{save_folder}/detected_retail_parks.parquet")
-            park_cells = retail_park_integration.get_retail_park_cells(retail_parks, include_park_metadata=True)
-            park_cells.to_parquet(f"{save_folder}/retail_park_cells.parquet")
-            print(f"  Detected {retail_parks['park_id'].nunique()} retail parks")
-        elif retail_parks_path:
+        if retail_parks_path:
             print(f"\nLoading retail parks from: {retail_parks_path}")
             park_cells = gpd.read_parquet(retail_parks_path)
             print(f"  Loaded {park_cells['park_id'].nunique()} retail parks")
         else:
             print("\nWarning: integrate_retail_parks=True but no parks detected or provided")
-            park_cells = None
+
+            #throw error
+            raise ValueError("Retail parks path must be provided if integrate_retail_parks is True")
 
         # Step 2: Integrate parks (workflow 3)
         if integrate_retail_parks and park_cells is not None:

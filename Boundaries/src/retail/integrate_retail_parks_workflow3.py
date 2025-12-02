@@ -25,7 +25,7 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import utils as ut
-from retail.detect_retail_parks import identify_retail_parks, convert_retail_parks_to_h3
+
 
 
 def load_retail_centres(centres_path: str) -> gpd.GeoDataFrame:

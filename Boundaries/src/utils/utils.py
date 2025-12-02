@@ -133,7 +133,6 @@ def agg_to_cells_foursquare(df: pl.DataFrame, threshold: float = 0.5) -> pl.Data
 
 def create_combined_table(
     foursquare_cells: pl.DataFrame,
-    overture_cells: pl.DataFrame,
     land_use_cells: pl.DataFrame,
 ) -> pl.DataFrame:
 
@@ -151,17 +150,15 @@ def create_combined_table(
         "landuse"
     )  # Drop the original landuse column if needed
 
-    # Add overture data
-    combined = combined.join(overture_cells, on="h3_11", how="full", coalesce=True)
+
     # Rename columns
     combined = combined.rename(
-        {"retail_count": "foursquare_count", "retail_count_right": "overture_count"}
+        {"retail_count": "foursquare_count"}
     )
 
     # Fill in missing values
     combined = combined.with_columns(
         [
-            pl.col("overture_count").fill_null(0),  # Replace null retail_count with 0
             pl.col("foursquare_count").fill_null(0),  # Replace null retail_count with 0
             pl.col("retail_landuse").fill_null(
                 False
@@ -220,7 +217,6 @@ def join_networks_with_cells(networks, input_cells):
         cells_with_network
         .group_by("network_number")
         .agg([
-            pl.sum("overture_count").alias("total_overture_count"),
             pl.sum("foursquare_count").alias("total_foursquare_count"),
             pl.len().alias("trackNodes").cast(pl.Int64),
         ])
@@ -234,7 +230,6 @@ def join_networks_with_cells(networks, input_cells):
     
     # Fill missing values
     cells_with_network = cells_with_network.with_columns([
-        pl.col("overture_count").fill_null(0),
         pl.col("foursquare_count").fill_null(0),
         pl.col("retail_landuse").fill_null(False),
     ])
@@ -262,9 +257,9 @@ def dissolve_to_centres(df):
     # Columns to aggregate
     sum_cols = [
         'foursquare_count', 'Retail', 'Dining and Drinking',
-        'Leisure & Travel', 'Community & Health', 'overture_count'
+        'Leisure & Travel', 'Community & Health',
     ]
-    first_cols = ['total_overture_count', 'total_foursquare_count', 'trackNodes']
+    first_cols = ['total_foursquare_count', 'trackNodes']
     list_cols = ['level2_categories', 'category_names']
 
     # Define aggregation dictionary
