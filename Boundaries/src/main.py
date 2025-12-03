@@ -71,9 +71,10 @@ MIN_POIS_PER_LANDUSE_POLYGON = 1
 # RETAIL PARKS INTEGRATION CONFIGURATION
 # ========================================
 
-INTEGRATE_RETAIL_PARKS = TRUE
-RETAIL_PARKS_PATH = "data/output_files/retail_parks_h3_cells.parquet"
+INTEGRATE_RETAIL_PARKS = True
+RETAIL_PARKS_PATH = "data/output_files/retail_parks_20251203_121721/retail_park_cells_merged_filtered.parquet"
 MIN_REMAINDER_POIS = 10
+MERGE_RETAIL_PARKS = True  # Merge adjacent/overlapping retail park networks
 
 # Minimum POIs required in a retail land use polygon to keep it
 MIN_POIS_PER_LANDUSE_POLYGON = 1
@@ -183,5 +184,6 @@ for idx, (
         landuse_poi_threshold=LANDUSE_MIN_POIS_EXEMPT,
         integrate_retail_parks=INTEGRATE_RETAIL_PARKS,
         retail_parks_path=RETAIL_PARKS_PATH,
-        min_remainder_pois=MIN_REMAINDER_POIS
+        min_remainder_pois=MIN_REMAINDER_POIS,
+        merge_retail_parks=MERGE_RETAIL_PARKS
     )

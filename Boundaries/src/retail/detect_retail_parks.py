@@ -15,8 +15,12 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import re
+import h3
+import networkx as nx
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Set, List
+from collections import defaultdict
+from shapely.geometry import MultiPolygon
 
 
 def brand_to_pattern(brand: str) -> str:
@@ -80,8 +84,7 @@ def filter_pois_by_brands(
 def compute_retail_park_metrics(
     retail_landuse: gpd.GeoDataFrame,
     foursquare_pois_filtered: gpd.GeoDataFrame,
-    foursquare_pois_all: gpd.GeoDataFrame,
-    predicate: str = "within"
+    foursquare_pois_all: gpd.GeoDataFrame
 ) -> gpd.GeoDataFrame:
     """
     Compute retail park metrics for landuse polygons.
@@ -93,7 +96,6 @@ def compute_retail_park_metrics(
         retail_landuse: GeoDataFrame of retail landuse polygons
         foursquare_pois_filtered: GeoDataFrame of bigbox brand POIs
         foursquare_pois_all: GeoDataFrame of ALL Foursquare POIs
-        predicate: Spatial predicate for join ("within" or "intersects")
 
     Returns:
         retail_landuse GeoDataFrame with added columns:
@@ -118,7 +120,7 @@ def compute_retail_park_metrics(
         foursquare_pois_filtered,
         retail_landuse,
         how="inner",
-        predicate=predicate
+        predicate="within"
     )
 
     # Spatial join: ALL POIs (for centre totals)
@@ -126,7 +128,7 @@ def compute_retail_park_metrics(
         foursquare_pois_all,
         retail_landuse,
         how="inner",
-        predicate=predicate
+        predicate="within"
     )
 
     # Count UNIQUE brands per polygon (not total POI count)
@@ -275,7 +277,6 @@ def identify_retail_parks(
     brands_csv_path: str,
     min_ratio: float = 0.05,
     min_matched_pois: int = 1,
-    predicate: str = "within",
     output_path: Optional[str] = None,
     area_hist_path: Optional[str] = None
 ) -> gpd.GeoDataFrame:
@@ -288,8 +289,8 @@ def identify_retail_parks(
         brands_csv_path: Path to retail park brands CSV
         min_ratio: Minimum ratio of bigbox POIs to total POIs (default: 0.05 = 5%)
         min_matched_pois: Minimum number of bigbox brand POIs (default: 1)
-        predicate: Spatial predicate ("within" or "intersects")
         output_path: Optional path to save results as parquet
+        area_hist_path: Optional path to save area histogram
 
     Returns:
         GeoDataFrame of identified retail parks with metrics
@@ -343,8 +344,7 @@ def identify_retail_parks(
     retail_landuse = compute_retail_park_metrics(
         retail_landuse,
         foursquare_pois_filtered,
-        foursquare_pois,
-        predicate=predicate
+        foursquare_pois
     )
     print()
 
@@ -390,24 +390,199 @@ def identify_retail_parks(
     return retail_parks
 
 
+def merge_adjacent_parks(
+    retail_parks_h3: pd.DataFrame,
+    retail_parks_polygons: gpd.GeoDataFrame
+) -> Tuple[pd.DataFrame, gpd.GeoDataFrame]:
+    """
+    Merge adjacent or overlapping retail parks.
+
+    Updates both the H3 cells dataframe and the polygons dataframe to reflect merged parks.
+    Polygons are grouped into MultiPolygons with the same park_id.
+
+    Args:
+        retail_parks_h3: DataFrame with H3 cells (must have 'park_id' and 'h3_11' columns)
+        retail_parks_polygons: GeoDataFrame with original park polygons (must have 'park_id' column)
+
+    Returns:
+        Tuple of (merged_h3_df, merged_polygons_gdf)
+    """
+    from tqdm import tqdm
+
+    print("Merging adjacent/overlapping retail parks...")
+
+    # Build reverse lookup: h3_cell -> set of park_ids containing it
+    cell_to_parks: Dict[str, Set[int]] = defaultdict(set)
+    for _, row in retail_parks_h3.iterrows():
+        cell_to_parks[row['h3_11']].add(row['park_id'])
+
+    # Build park_cells for later use
+    park_cells: Dict[int, Set[str]] = defaultdict(set)
+    for _, row in retail_parks_h3.iterrows():
+        park_cells[row['park_id']].add(row['h3_11'])
+
+    park_ids = list(park_cells.keys())
+    n_parks_before = len(park_ids)
+
+    # Find pairs of parks that are adjacent or overlapping (more efficient)
+    adjacent_pairs_set = set()
+
+    for park_id in tqdm(park_ids, desc="Finding adjacent parks"):
+        cells = park_cells[park_id]
+
+        # Check for overlapping parks (parks sharing cells)
+        for cell in cells:
+            other_parks = cell_to_parks[cell]
+            for other_park in other_parks:
+                if other_park != park_id:
+                    # Add as sorted tuple to avoid duplicates
+                    pair = tuple(sorted([park_id, other_park]))
+                    adjacent_pairs_set.add(pair)
+
+        # Check for adjacent parks (parks with neighboring cells)
+        for cell in cells:
+            neighbors = h3.grid_ring(cell, 1)
+            for neighbor in neighbors:
+                if neighbor in cell_to_parks:
+                    for other_park in cell_to_parks[neighbor]:
+                        if other_park != park_id:
+                            pair = tuple(sorted([park_id, other_park]))
+                            adjacent_pairs_set.add(pair)
+
+    adjacent_pairs = list(adjacent_pairs_set)
+
+    if not adjacent_pairs:
+        print("  No adjacent/overlapping parks found")
+        return retail_parks_h3.copy(), retail_parks_polygons.copy()
+
+    print(f"  Found {len(adjacent_pairs)} adjacent/overlapping pairs")
+
+    # Create a graph and find connected components
+    G = nx.Graph(adjacent_pairs)
+
+    # Create mapping: old park_id -> new park_id (smallest in component)
+    park_id_mapping = {}
+    for component in nx.connected_components(G):
+        new_id = min(component)
+        for park_id in component:
+            park_id_mapping[park_id] = new_id
+
+    # Add unmapped parks (those that weren't in any pair)
+    for park_id in park_ids:
+        if park_id not in park_id_mapping:
+            park_id_mapping[park_id] = park_id
+
+    # Update H3 cells dataframe
+    retail_parks_h3_merged = retail_parks_h3.copy()
+    retail_parks_h3_merged['park_id'] = retail_parks_h3_merged['park_id'].map(park_id_mapping)
+
+    # Update polygons: group by new park_id and create MultiPolygons
+    retail_parks_polygons_merged = retail_parks_polygons.copy()
+    retail_parks_polygons_merged['park_id'] = retail_parks_polygons_merged['park_id'].map(park_id_mapping)
+
+    # Group polygons by park_id and combine into MultiPolygons
+    merged_polys = []
+    park_groups = list(retail_parks_polygons_merged.groupby('park_id'))
+
+    for park_id, group in tqdm(park_groups, desc="Merging polygons"):
+        # Flatten geometries (extract Polygons from MultiPolygons)
+        from shapely.geometry import Polygon
+        all_polygons = []
+        for geom in group.geometry:
+            if geom.geom_type == 'Polygon':
+                all_polygons.append(geom)
+            elif geom.geom_type == 'MultiPolygon':
+                all_polygons.extend(list(geom.geoms))
+
+        # Create merged geometry
+        if len(all_polygons) == 1:
+            merged_geom = all_polygons[0]
+        else:
+            merged_geom = MultiPolygon(all_polygons)
+
+        # Aggregate other columns (take first value or sum as appropriate)
+        merged_row = group.iloc[0].copy()
+        merged_row['geometry'] = merged_geom
+        merged_row['park_id'] = park_id
+
+        # Combine names from all merged parks
+        if 'name' in group.columns:
+            names = group['name'].dropna().unique()
+            if len(names) > 0:
+                merged_row['name'] = ', '.join(names)
+            else:
+                merged_row['name'] = None
+
+        # Sum numeric columns
+        if 'matched_brand_count' in group.columns:
+            merged_row['matched_brand_count'] = group['matched_brand_count'].sum()
+        if 'centre_poi_total' in group.columns:
+            merged_row['centre_poi_total'] = group['centre_poi_total'].sum()
+        if 'area_sqm' in group.columns:
+            merged_row['area_sqm'] = group['area_sqm'].sum()
+        if 'area_sqkm' in group.columns:
+            merged_row['area_sqkm'] = group['area_sqkm'].sum()
+
+        # Recalculate ratio
+        if 'matched_to_centre_ratio' in merged_row.index:
+            if merged_row['centre_poi_total'] > 0:
+                merged_row['matched_to_centre_ratio'] = merged_row['matched_brand_count'] / merged_row['centre_poi_total']
+
+        # Combine brand lists
+        if 'matched_brand_list' in group.columns:
+            all_brands = []
+            for brand_list in group['matched_brand_list']:
+                if isinstance(brand_list, list):
+                    all_brands.extend(brand_list)
+            merged_row['matched_brand_list'] = all_brands
+
+        merged_polys.append(merged_row)
+
+    retail_parks_polygons_merged = gpd.GeoDataFrame(merged_polys, crs=retail_parks_polygons.crs)
+
+    # Map aggregated attributes from polygons to H3 cells
+    print("  Mapping aggregated attributes to H3 cells...")
+
+    # Create mapping from park_id to aggregated attributes
+    attr_cols = ['name', 'matched_brand_count', 'centre_poi_total', 'matched_to_centre_ratio',
+                 'matched_brand_list', 'area_sqm', 'area_sqkm']
+
+    for col in attr_cols:
+        if col in retail_parks_polygons_merged.columns and col in retail_parks_h3_merged.columns:
+            park_attr_map = retail_parks_polygons_merged.set_index('park_id')[col].to_dict()
+            retail_parks_h3_merged[col] = retail_parks_h3_merged['park_id'].map(park_attr_map)
+
+    n_parks_after = retail_parks_polygons_merged['park_id'].nunique()
+    print(f"  Parks before merge: {n_parks_before}")
+    print(f"  Parks after merge: {n_parks_after}")
+    print(f"  Parks merged: {n_parks_before - n_parks_after}")
+
+    return retail_parks_h3_merged, retail_parks_polygons_merged
+
+
 def convert_retail_parks_to_h3(
     retail_parks_polygons: gpd.GeoDataFrame,
     output_h3_path: Optional[str] = None,
-    output_polygons_path: Optional[str] = None
+    output_polygons_path: Optional[str] = None,
+    merge_adjacent: bool = True,
+    min_area_sqkm: float = 0.007
 ) -> Tuple[pd.DataFrame, gpd.GeoDataFrame]:
     """
     Convert retail park polygons to H3 cells at resolution 11.
 
     Uses resolution 13 for detailed coverage, then derives parent resolution 11 cells.
+    Optionally merges adjacent/overlapping parks and filters by minimum area.
     Returns both H3 cell DataFrame and dissolved polygon GeoDataFrame.
 
     Args:
         retail_parks_polygons: GeoDataFrame of retail park polygons
-        output_h3_path: Optional path to save H3 cells parquet
-        output_polygons_path: Optional path to save dissolved polygons parquet
+        output_h3_path: Optional path to save H3 cells parquet (unmerged version)
+        output_polygons_path: Optional path to save dissolved polygons parquet (unmerged version)
+        merge_adjacent: If True, also creates and saves merged versions (default: True)
+        min_area_sqkm: Minimum area in sqkm to keep parks after merging (default: 0.007)
 
     Returns:
-        Tuple of (h3_cells_df, dissolved_polygons_gdf)
+        Tuple of (h3_cells_df, dissolved_polygons_gdf) - returns merged and filtered version if merge_adjacent=True
     """
     from tqdm import tqdm
     import h3
@@ -496,25 +671,92 @@ def convert_retail_parks_to_h3(
     print(f"  Single-cell parks: {single_cell} ({single_cell/len(cells_per_park)*100:.1f}%)")
     print()
 
-    # Save H3 cells if requested
-    if output_h3_path:
-        retail_parks_h3_geo.to_parquet(output_h3_path, index=False)
-        print(f"Saved H3 cells to: {output_h3_path}")
-
-    # Create dissolved polygons from H3 cells (for visualization)
-    # Note: This requires loading retail centre cells to get H3 geometries
-    # For now, just return the H3 cells and original polygons
+    # Prepare polygons with park_ids
     retail_parks_dissolved = retail_parks_polygons.copy()
     retail_parks_dissolved['park_id'] = range(len(retail_parks_dissolved))
 
+    # Save unmerged H3 cells if requested
+    if output_h3_path:
+        retail_parks_h3_geo.to_parquet(output_h3_path, index=False)
+        print(f"Saved unmerged H3 cells to: {output_h3_path}")
+
+    # Save unmerged polygons if requested
     if output_polygons_path:
         retail_parks_dissolved.to_parquet(output_polygons_path)
-        print(f"Saved polygons to: {output_polygons_path}")
+        print(f"Saved unmerged polygons to: {output_polygons_path}")
 
-    print("="*80)
-    print()
+    # Merge adjacent parks if requested
+    if merge_adjacent:
+        print()
+        retail_parks_h3_merged, retail_parks_polygons_merged = merge_adjacent_parks(
+            retail_parks_h3_geo,
+            retail_parks_dissolved
+        )
 
-    return retail_parks_h3_geo, retail_parks_dissolved
+        # Save merged versions
+        if output_h3_path:
+            merged_h3_path = output_h3_path.replace('.parquet', '_merged.parquet')
+            retail_parks_h3_merged.to_parquet(merged_h3_path, index=False)
+            print(f"Saved merged H3 cells to: {merged_h3_path}")
+
+        if output_polygons_path:
+            merged_polygons_path = output_polygons_path.replace('.parquet', '_merged.parquet')
+            retail_parks_polygons_merged.to_parquet(merged_polygons_path)
+            print(f"Saved merged polygons to: {merged_polygons_path}")
+
+        # Apply size filter to both merged and unmerged versions
+        if min_area_sqkm > 0:
+            print(f"\nApplying size filter ({min_area_sqkm} sqkm) to saved files...")
+
+            # Filter merged versions
+            merged_mask = retail_parks_polygons_merged['area_sqkm'] >= min_area_sqkm
+            merged_h3_filtered = retail_parks_h3_merged[
+                retail_parks_h3_merged['park_id'].isin(
+                    retail_parks_polygons_merged[merged_mask]['park_id']
+                )
+            ]
+            merged_poly_filtered = retail_parks_polygons_merged[merged_mask]
+
+            # Filter unmerged versions
+            unmerged_mask = retail_parks_dissolved['area_sqkm'] >= min_area_sqkm
+            unmerged_h3_filtered = retail_parks_h3_geo[
+                retail_parks_h3_geo['park_id'].isin(
+                    retail_parks_dissolved[unmerged_mask]['park_id']
+                )
+            ]
+            unmerged_poly_filtered = retail_parks_dissolved[unmerged_mask]
+
+            # Save filtered versions
+            if output_h3_path:
+                merged_h3_filtered_path = output_h3_path.replace('.parquet', '_merged_filtered.parquet')
+                merged_h3_filtered.to_parquet(merged_h3_filtered_path, index=False)
+                print(f"  Saved merged filtered H3: {merged_h3_filtered_path}")
+
+                unmerged_h3_filtered_path = output_h3_path.replace('.parquet', '_filtered.parquet')
+                unmerged_h3_filtered.to_parquet(unmerged_h3_filtered_path, index=False)
+                print(f"  Saved unmerged filtered H3: {unmerged_h3_filtered_path}")
+
+            if output_polygons_path:
+                merged_poly_filtered_path = output_polygons_path.replace('.parquet', '_merged_filtered.parquet')
+                merged_poly_filtered.to_parquet(merged_poly_filtered_path)
+                print(f"  Saved merged filtered polygons: {merged_poly_filtered_path}")
+
+                unmerged_poly_filtered_path = output_polygons_path.replace('.parquet', '_filtered.parquet')
+                unmerged_poly_filtered.to_parquet(unmerged_poly_filtered_path)
+                print(f"  Saved unmerged filtered polygons: {unmerged_poly_filtered_path}")
+
+            print(f"\n  Merged: {len(retail_parks_polygons_merged)} → {len(merged_poly_filtered)} parks (removed {len(retail_parks_polygons_merged) - len(merged_poly_filtered)})")
+            print(f"  Unmerged: {len(retail_parks_dissolved)} → {len(unmerged_poly_filtered)} parks (removed {len(retail_parks_dissolved) - len(unmerged_poly_filtered)})")
+
+        # Return merged versions
+        print("="*80)
+        print()
+        return retail_parks_h3_merged, retail_parks_polygons_merged
+    else:
+        # Return unmerged versions
+        print("="*80)
+        print()
+        return retail_parks_h3_geo, retail_parks_dissolved
 
 
 def main():
@@ -522,6 +764,12 @@ def main():
     Main function for standalone testing.
     """
     import argparse
+    from datetime import datetime
+
+    # Create timestamped output folder
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(f"data/output_files/retail_parks_{timestamp}")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     parser = argparse.ArgumentParser(
         description="Detect retail parks based on bigbox store brands"
@@ -557,38 +805,26 @@ def main():
         help="Minimum number of bigbox POIs (default: 1)"
     )
     parser.add_argument(
-        "--output",
+        "--output_dir",
         type=str,
-        default="data/output_files/retail_parks_detected.parquet",
-        help="Output path for detected retail parks (polygons)"
-    )
-    parser.add_argument(
-        "--output_h3",
-        type=str,
-        default="data/output_files/retail_parks_h3_cells.parquet",
-        help="Output path for retail parks H3 cells"
-    )
-    parser.add_argument(
-        "--output_polygons",
-        type=str,
-        default="data/output_files/retail_parks_polygons.parquet",
-        help="Output path for retail parks dissolved polygons"
-    )
-    parser.add_argument(
-        "--output_hist",
-        type=str,
-        default="data/output_files/retail_parks_area_sqkm_hist.png",
-        help="Output path for histogram of retail park areas (sqkm)"
-    )
-    parser.add_argument(
-        "--predicate",
-        type=str,
-        default="within",
-        choices=["within", "intersects"],
-        help="Spatial predicate for POI-polygon join"
+        default=None,
+        help="Output directory (default: timestamped folder)"
     )
 
     args = parser.parse_args()
+
+    # Use custom output dir if provided
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nOutput directory: {output_dir}\n")
+
+    # Build output paths
+    output_path = str(output_dir / "detected_retail_parks.parquet")
+    output_hist = str(output_dir / "retail_parks_area_hist.png")
+    output_h3 = str(output_dir / "retail_park_cells.parquet")
+    output_polygons = str(output_dir / "retail_parks_polygons.parquet")
 
     retail_parks = identify_retail_parks(
         retail_landuse_path=args.retail_landuse,
@@ -596,9 +832,8 @@ def main():
         brands_csv_path=args.brands,
         min_ratio=args.min_ratio,
         min_matched_pois=args.min_matched,
-        predicate=args.predicate,
-        output_path=args.output,
-        area_hist_path=args.output_hist
+        output_path=output_path,
+        area_hist_path=output_hist
     )
 
     # Print summary statistics
@@ -613,8 +848,8 @@ def main():
     print("\n")
     convert_retail_parks_to_h3(
         retail_parks,
-        output_h3_path=args.output_h3,
-        output_polygons_path=args.output_polygons
+        output_h3_path=output_h3,
+        output_polygons_path=output_polygons
     )
 
 

@@ -344,7 +344,6 @@ def subtract_park_cells_from_centres(
     merged_count = summary_df[~summary_df['decision'].isin(['keep', 'no_overlap', 'split_fragmented'])].shape[0]
     print(f"Centres merged to parks: {merged_count:,}")
     print(f"  - Fully park: {summary_df[summary_df['decision'] == 'fully_park'].shape[0]:,}")
-    print(f"  - Below cell threshold: {summary_df[summary_df['decision'] == 'below_cell_threshold'].shape[0]:,}")
     print(f"  - Below POI threshold: {summary_df[summary_df['decision'] == 'below_poi_threshold'].shape[0]:,}")
     if check_connectivity:
         print(f"  - Split & evaluated: {summary_df[summary_df['decision'] == 'split_fragmented'].shape[0]:,}")

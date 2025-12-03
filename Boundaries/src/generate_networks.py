@@ -33,7 +33,8 @@ def generate_networks(
     landuse_poi_threshold: Optional[int] = 20,
     integrate_retail_parks: bool = False,
     retail_parks_path: Optional[str] = None,
-    min_remainder_pois: int = 10
+    min_remainder_pois: int = 10,
+    merge_retail_parks: bool = True
 ) -> None:
     """
     Creates and processes retail centre networks from a combined Polars DataFrame.
@@ -110,27 +111,9 @@ def generate_networks(
         f"{n_networks}"
     )
 
-    # ----------------------------------------
-    # Merge networks - SKIPPED (will merge after retail parks & landuse filter)
-    # ----------------------------------------
-    # Commented out - merge happens after filters now
-    # if merge_adjacent:
-    #     filt_cells_with_network = network_merger.merge_networks_separated_by_one_cell(
-    #         filt_cells_with_network, merge_h3_threshold= 10
-    #     )
-    #     filt_cells_with_network = ut.join_networks_with_cells(
-    #         filt_cells_with_network, input_cells
-    #     )
-
-    #     n_networks = filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]
-    #     print(
-    #         "Number of networks after merging adjacent: "
-    #         f"{n_networks}"
-    #     )
-
     ut.to_parquet(
         filt_cells_with_network,
-        f"{save_folder}/2_merged_filtered_networks.parquet",
+        f"{save_folder}/2_filtered_networks.parquet",
     )
 
     # ----------------------------------------
