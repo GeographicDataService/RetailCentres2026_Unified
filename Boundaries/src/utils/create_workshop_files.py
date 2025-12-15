@@ -10,11 +10,14 @@ Creates 4 variants:
 Also creates:
 5. filtered_pois.gpkg - POI data with just name and full category
 6. retail_parks.gpkg - Retail park polygons with all attributes (optional)
+7. centres_clean.gpkg - Clean centres with only RC_ID and category totals
+8. retail_parks_clean.gpkg - Clean retail parks with name, ID, total POIs, matched brands, and match % (optional)
 """
 
 import geopandas as gpd
 import argparse
 from pathlib import Path
+from datetime import datetime
 import re
 
 
@@ -25,7 +28,7 @@ def sanitize_column_names(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     Rules:
     - Must start with a letter
     - Only letters, numbers, and underscores
-    - No spaces or special characters
+    - Replace all special characters and spaces with underscores
     - Max 64 characters
     """
     gdf = gdf.copy()
@@ -38,15 +41,16 @@ def sanitize_column_names(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         # Replace special characters and spaces with underscores
         new_col = re.sub(r'[^a-zA-Z0-9_]', '_', col)
 
-        # Remove leading/trailing underscores
-        new_col = new_col.strip('_')
+        # Remove leading/trailing spaces and underscores
+        new_col = new_col.strip('_ ')
 
         # Ensure starts with letter
         if new_col and not new_col[0].isalpha():
             new_col = 'col_' + new_col
 
-        # Remove consecutive underscores
+        # Remove consecutive underscores and clean up spaces around underscores
         new_col = re.sub(r'_+', '_', new_col)
+        new_col = re.sub(r'\s+', ' ', new_col)  # Remove consecutive spaces
 
         # Truncate to 64 characters
         new_col = new_col[:64]
@@ -132,14 +136,29 @@ def create_workshop_centres(
 
 def create_filtered_pois(poi_path: str, output_dir: str = "data/forarcgis"):
     """Create filtered POI geopackage with just name and full category."""
+    import pandas as pd
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("\nCreating filtered POI geopackage...")
     print(f"Loading POIs from {poi_path}...")
-    pois = gpd.read_parquet(poi_path)
-    print(f"  Loaded {len(pois)} POIs")
+
+    # Try geopandas first, fall back to pandas if no geo metadata
+    try:
+        pois = gpd.read_parquet(poi_path)
+    except ValueError:
+        # Not a geoparquet, read with pandas and convert
+        from shapely import wkb
+        pois_df = pd.read_parquet(poi_path)
+        if 'geometry' in pois_df.columns:
+            # Convert WKB to shapely geometry
+            pois_df['geometry'] = pois_df['geometry'].apply(lambda x: wkb.loads(bytes(x)) if x is not None else None)
+            pois = gpd.GeoDataFrame(pois_df, geometry='geometry', crs='EPSG:4326')
+        else:
+            raise ValueError("POI file must have a 'geometry' column")
+
+    print(f"  Loaded {len(pois):,} POIs")
 
     # Keep only name and category columns
     columns_to_keep = ['name', 'geometry']
@@ -202,7 +221,173 @@ def create_retail_parks_gpkg(retail_parks_path: str, output_dir: str = "data/for
     print("\nRetail parks geopackage created successfully!")
 
 
+def create_centres_clean(
+    split_centres_path: str,
+    output_dir: str = "data/forarcgis"
+):
+    """Create clean centres GPKG with only RC_ID and category totals."""
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("\nCreating centres_clean.gpkg...")
+    print(f"Loading centres from {split_centres_path}...")
+    centres = gpd.read_parquet(split_centres_path)
+    print(f"  Loaded {len(centres)} centres")
+
+    # Select only the required columns
+    # Adjust column names based on what's actually in the file
+    required_cols = ['RC_ID', 'geometry']
+
+    # Map potential column name variations to desired output names
+    column_mapping = {
+        'Total Units': 'Total Units',
+        'total_units': 'Total Units',
+        'poi_count': 'Total Units',
+        'Total_POI_count': 'Total Units',
+        'Retail (total)': 'Retail (total)',
+        'retail_total': 'Retail (total)',
+        'Retail': 'Retail (total)',
+        'Dining and Drinking (total)': 'Dining and Drinking (total)',
+        'dining_drinking_total': 'Dining and Drinking (total)',
+        'Dining and Drinking': 'Dining and Drinking (total)',
+        'Leisure and Travel (total)': 'Leisure and Travel (total)',
+        'leisure_travel_total': 'Leisure and Travel (total)',
+        'Leisure & Travel': 'Leisure and Travel (total)',
+        'Community and Health (total)': 'Community and Health (total)',
+        'community_health_total': 'Community and Health (total)',
+        'Community & Health': 'Community and Health (total)',
+        'centre_type': 'Is Retail Park'
+    }
+
+    # Find which columns exist and build the clean dataframe
+    cols_to_keep = ['RC_ID', 'geometry']
+    rename_dict = {}
+
+    for possible_col, standard_col in column_mapping.items():
+        if possible_col in centres.columns:
+            cols_to_keep.append(possible_col)
+            if possible_col != standard_col:
+                rename_dict[possible_col] = standard_col
+
+    # Filter to just these columns
+    centres_clean = centres[cols_to_keep].copy()
+
+    # Rename to standard names
+    if rename_dict:
+        centres_clean = centres_clean.rename(columns=rename_dict)
+
+    # Convert Is Retail Park to boolean: retail_park -> True, centre -> False
+    if 'Is Retail Park' in centres_clean.columns:
+        centres_clean['Is Retail Park'] = centres_clean['Is Retail Park'].map({
+            'retail_park': True,
+            'centre': False
+        }).fillna(False)
+
+    # Sanitize column names for ArcGIS
+    centres_clean = sanitize_column_names(centres_clean)
+
+    # Save to GPKG
+    output_path = output_dir / "centres_clean.gpkg"
+    centres_clean.to_file(output_path, driver="GPKG", layer="centres_clean")
+    print(f"  Saved to {output_path}")
+    print(f"  Columns: {list(centres_clean.columns)}")
+
+    print("\nCentres clean geopackage created successfully!")
+
+
+def create_retail_parks_clean(
+    retail_parks_path: str,
+    output_dir: str = "data/forarcgis"
+):
+    """Create clean retail parks GPKG with name, ID, total POIs, matched brands, and match percentage."""
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("\nCreating retail_parks_clean.gpkg...")
+    print(f"Loading retail parks from {retail_parks_path}...")
+    retail_parks = gpd.read_parquet(retail_parks_path)
+    print(f"  Loaded {len(retail_parks)} retail parks")
+
+    # Map potential column name variations to desired output names
+    column_mapping = {
+        'name': 'Name',
+        'Name': 'Name',
+        'park_name': 'Name',
+        'RC_ID': 'RC_ID',
+        'id': 'RC_ID',
+        'park_id': 'RC_ID',
+        'centre_poi_total': 'Total POIs',
+        'total_pois': 'Total POIs',
+        'poi_count': 'Total POIs',
+        'Total_POI_count': 'Total POIs',
+        'matched_brand_list': 'Matched Brands',
+        'matched_brands': 'Matched Brands',
+        'Matched Brands': 'Matched Brands',
+        'matched_pois': 'Matched Brands'
+    }
+
+    # Find which columns exist
+    cols_to_keep = ['geometry']
+    rename_dict = {}
+
+    for possible_col, standard_col in column_mapping.items():
+        if possible_col in retail_parks.columns:
+            if possible_col not in cols_to_keep:
+                cols_to_keep.append(possible_col)
+            if possible_col != standard_col:
+                rename_dict[possible_col] = standard_col
+
+    # Also keep matched_to_centre_ratio for calculation
+    if 'matched_to_centre_ratio' in retail_parks.columns:
+        cols_to_keep.append('matched_to_centre_ratio')
+
+    # Filter to just these columns
+    retail_parks_clean = retail_parks[cols_to_keep].copy()
+
+    # Calculate percentage column (ratio * 100, rounded to 1 decimal place)
+    if 'matched_to_centre_ratio' in retail_parks_clean.columns:
+        retail_parks_clean['Match Percentage'] = (retail_parks_clean['matched_to_centre_ratio'] * 100).round(1)
+        retail_parks_clean = retail_parks_clean.drop(columns=['matched_to_centre_ratio'])
+
+    # Rename to standard names
+    if rename_dict:
+        retail_parks_clean = retail_parks_clean.rename(columns=rename_dict)
+
+    # Clean up Matched Brands column - remove "(X POIs)" text
+    if 'Matched Brands' in retail_parks_clean.columns:
+        import numpy as np
+
+        def clean_brands(x):
+            if x is None:
+                return None
+            # If it's a list or numpy array, clean each element
+            if isinstance(x, (list, np.ndarray)):
+                cleaned = [re.sub(r'\s*\(\d+\s+POIs?\)', '', str(brand)).strip() for brand in x]
+                return ', '.join(cleaned)
+            # If it's a string, clean it
+            return re.sub(r'\s*\(\d+\s+POIs?\)', '', str(x)).strip()
+
+        retail_parks_clean['Matched Brands'] = retail_parks_clean['Matched Brands'].apply(clean_brands)
+
+    # Sanitize column names for ArcGIS
+    retail_parks_clean = sanitize_column_names(retail_parks_clean)
+
+    # Save to GPKG
+    output_path = output_dir / "retail_parks_clean.gpkg"
+    retail_parks_clean.to_file(output_path, driver="GPKG", layer="retail_parks_clean")
+    print(f"  Saved to {output_path}")
+    print(f"  Columns: {list(retail_parks_clean.columns)}")
+
+    print("\nRetail parks clean geopackage created successfully!")
+
+
 if __name__ == "__main__":
+    # Create timestamped output folder
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_output_dir = Path(f"data/forarcgis/workshop_{timestamp}")
+
     parser = argparse.ArgumentParser(
         description="Create postworkshopcentres GPKG files and filtered POI geopackage"
     )
@@ -228,26 +413,41 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-dir",
-        default="data/forarcgis",
-        help="Output directory (default: data/forarcgis)"
+        default=None,
+        help="Output directory (default: timestamped folder in data/forarcgis)"
     )
 
     args = parser.parse_args()
+
+    # Use custom output dir if provided, otherwise use timestamped folder
+    output_dir = args.output_dir if args.output_dir else str(default_output_dir)
+
+    print("\n" + "="*80)
+    print(f"Output directory: {output_dir}")
+    print("="*80 + "\n")
 
     # Create workshopcentres files
     create_workshop_centres(
         args.split_centres,
         args.nosplit_centres,
-        args.output_dir
+        output_dir
     )
 
     # Create filtered POI file
-    create_filtered_pois(args.pois, args.output_dir)
+    create_filtered_pois(args.pois, output_dir)
 
     # Create retail parks file (if provided)
     if args.retail_parks:
-        create_retail_parks_gpkg(args.retail_parks, args.output_dir)
+        create_retail_parks_gpkg(args.retail_parks, output_dir)
+
+    # Create clean centres file (with only RC_ID and category totals)
+    create_centres_clean(args.split_centres, output_dir)
+
+    # Create clean retail parks file (if provided)
+    if args.retail_parks:
+        create_retail_parks_clean(args.retail_parks, output_dir)
 
     print("\n" + "="*80)
     print("ALL FILES CREATED SUCCESSFULLY!")
+    print(f"Output directory: {output_dir}")
     print("="*80)
