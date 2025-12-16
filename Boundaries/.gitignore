@@ -1,5 +1,6 @@
 data/
 *.pyc
 *cache
+*.egg-info/
 notebooks/bankpoicheck/data
 notebooks/defunct_removed_top10

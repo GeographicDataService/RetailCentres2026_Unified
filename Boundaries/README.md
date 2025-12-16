@@ -61,3 +61,8 @@ RetailCentres/
 
 ---
 
+## Last Run Command
+
+```bash
+python src/main.py --run_name nov2025v22_qualfiltreorgv2 --foursquare data/input_files/uk_foursquare_cc_nov_iceberg.parquet
+```
