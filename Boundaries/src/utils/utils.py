@@ -4,8 +4,7 @@ import h3
 import geopandas as gpd
 from shapely.geometry import Polygon, MultiPolygon
 import networkx as nx
-from collections import defaultdict
-from itertools import combinations, chain
+from itertools import chain
 
 
 def to_geoframe(df):

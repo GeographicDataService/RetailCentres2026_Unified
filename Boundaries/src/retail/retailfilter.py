@@ -1,4 +1,3 @@
-import os
 import argparse
 import polars as pl
 import geopandas as gpd

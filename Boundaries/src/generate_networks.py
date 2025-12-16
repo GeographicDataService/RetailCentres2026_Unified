@@ -12,7 +12,7 @@ from retail import find_subcentres
 from retail import landuse_filter
 from retail import manual_edits
 from retail import network_merger
-from retail import integrate_retail_parks_workflow3 as retail_park_integration
+from retail import integrate_retail_parks as retail_park_integration
 
 
 COMMERCIAL_LANDUSE_PATH = Path("data/input_files/commercial_landuse.parquet")

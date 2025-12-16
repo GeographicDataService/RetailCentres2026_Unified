@@ -6,8 +6,8 @@ import h3
 from typing import Dict, Set, Tuple, List
 import networkx as nx
 from itertools import combinations
-from typing import Dict, Set, Tuple, DefaultDict
-from collections import defaultdict
+from typing import DefaultDict
+
 
 
 def merge_networks_separated_by_one_cell(data: pl.DataFrame, merge_h3_threshold: int)  -> pl.DataFrame:

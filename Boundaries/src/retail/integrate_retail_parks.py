@@ -9,17 +9,15 @@ Implements the "Merge to Parks" approach:
 4. If remainder is below POI threshold, MERGE it into the retail park (not delete)
 5. Output separate files for centres and parks
 
-Key difference from Workflow 2: Small remainders are absorbed into parks
-instead of being deleted, creating larger, more complete retail parks.
+Key difference from previous: Small remainders are absorbed into parks
+instead of being deleted.
 """
 
 import geopandas as gpd
 import pandas as pd
-import numpy as np
 from pathlib import Path
-from typing import Tuple, Optional, Dict, List
+from typing import Tuple
 import h3
-from shapely.geometry import Point
 import sys
 
 # Add parent directory to path for imports
@@ -593,7 +591,6 @@ def dissolve_to_polygons_with_metadata(park_networks: gpd.GeoDataFrame, name: st
     - cell_count (count)
     """
     from shapely.geometry import Polygon, MultiPolygon
-    from collections import Counter
 
     print(f"\n{name}...")
 
@@ -774,7 +771,6 @@ def create_polygon_outputs(
     print(f"  Networks: {len(parks_polygons):,}, POIs: {parks_polygons['poi_count'].sum():,}, Area: {parks_polygons['area_sqkm'].sum():.1f} km²")
 
     # 2. Split centres polygons (if any exist)
-    max_original_network = centres_kept['network_number'].max()
     split_centres = centres_kept[centres_kept['network_number'] > 100000].copy()  # Split networks have high IDs
 
     if len(split_centres) > 0:
@@ -914,7 +910,7 @@ def main():
     # Check if files exist
     from pathlib import Path as PathLib
     if PathLib(commercial_path).exists():
-        print(f"\nFiltering centres by commercial/industrial overlap...")
+        print("\nFiltering centres by commercial/industrial overlap...")
         commercial = gpd.read_parquet(commercial_path)
         industrial = commercial  # Use same for both if industrial not available
 

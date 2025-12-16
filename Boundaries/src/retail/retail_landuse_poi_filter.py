@@ -16,7 +16,6 @@ import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import utils as ut
 
 
 def filter_retail_landuse_by_pois(
@@ -57,7 +56,6 @@ def filter_retail_landuse_by_pois(
     # Convert Foursquare to GeoDataFrame
     print("\nConverting Foursquare POIs to GeoDataFrame...")
     foursquare_pd = foursquare.to_pandas()
-    from shapely.geometry import Point
     foursquare_gdf = gpd.GeoDataFrame(
         foursquare_pd,
         geometry=gpd.points_from_xy(foursquare_pd['lng'], foursquare_pd['lat']),
@@ -161,7 +159,7 @@ def convert_polygons_to_h3(polygons: gpd.GeoDataFrame) -> pd.DataFrame:
             return set()
 
     # Get H3 indices at resolution 13 (detailed)
-    print(f"  Computing H3 res13 cells...")
+    print("  Computing H3 res13 cells...")
     tqdm.pandas(desc="H3 res13")
     polygons['h3_indices_res13'] = polygons['geometry'].progress_apply(
         lambda g: get_h3_indices(g, resolution=13)
@@ -171,7 +169,7 @@ def convert_polygons_to_h3(polygons: gpd.GeoDataFrame) -> pd.DataFrame:
     polygons = polygons[polygons['h3_indices_res13'].apply(len) > 0]
 
     # Derive parent resolution 11 cells
-    print(f"  Deriving parent H3 res11 cells...")
+    print("  Deriving parent H3 res11 cells...")
     polygons['h3_indices_res11_parents'] = polygons['h3_indices_res13'].apply(
         lambda h3_cells: [h3.cell_to_parent(cell, 11) for cell in h3_cells]
     )

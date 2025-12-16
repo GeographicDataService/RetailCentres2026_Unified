@@ -4,7 +4,6 @@ Apply quality and retail filters to Foursquare POI data and save output.
 Order: quality filter first, then retail filter (matches main.py logic).
 """
 
-import geopandas as gpd
 import polars as pl
 from pathlib import Path
 import argparse

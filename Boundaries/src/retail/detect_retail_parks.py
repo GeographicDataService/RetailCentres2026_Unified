@@ -18,7 +18,7 @@ import re
 import h3
 import networkx as nx
 from pathlib import Path
-from typing import Tuple, Optional, Dict, Set, List
+from typing import Tuple, Optional, Dict, Set
 from collections import defaultdict
 from shapely.geometry import MultiPolygon
 
@@ -486,7 +486,6 @@ def merge_adjacent_parks(
 
     for park_id, group in tqdm(park_groups, desc="Merging polygons"):
         # Flatten geometries (extract Polygons from MultiPolygons)
-        from shapely.geometry import Polygon
         all_polygons = []
         for geom in group.geometry:
             if geom.geom_type == 'Polygon':

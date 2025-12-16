@@ -1,8 +1,5 @@
 import geopandas as gpd
-import pandas as pd
 import numpy as np
-
-
 
 def add_localauthorities_to_centres(retail_centres: gpd.GeoDataFrame):
     """

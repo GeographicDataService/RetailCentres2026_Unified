@@ -235,10 +235,6 @@ def create_centres_clean(
     centres = gpd.read_parquet(split_centres_path)
     print(f"  Loaded {len(centres)} centres")
 
-    # Select only the required columns
-    # Adjust column names based on what's actually in the file
-    required_cols = ['RC_ID', 'geometry']
-
     # Map potential column name variations to desired output names
     column_mapping = {
         'Total Units': 'Total Units',
