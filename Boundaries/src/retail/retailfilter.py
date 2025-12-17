@@ -278,7 +278,7 @@ if __name__ == "__main__":
 
     #print full list of unique fsq_category_labels (sorted) to csv
     unique_categories = gdf["fsq_category_labels"].unique().sort_values()
-    unique_categories.to_csv("data/POI_files/fsq_unique_categories.csv", index=False)
+    unique_categories.to_csv("data/intermediate/fsq_unique_categories.csv", index=False)
 
     # Prepare output filename
     output_path = Path(args.input_file).with_stem(Path(args.input_file).stem + "_retailfilt_geo")

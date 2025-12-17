@@ -15,23 +15,28 @@ from typing import Optional
 
 # Base directories
 DATA_DIR = Path("data")
-INPUT_FILES_DIR = DATA_DIR / "input_files"
-OUTPUT_FILES_DIR = DATA_DIR / "output_files"
-POI_FILES_DIR = DATA_DIR / "POI_files"
-BOUNDARIES_DIR = DATA_DIR / "Boundaries_lookups"
+INPUTS_DIR = DATA_DIR / "inputs"
+RUNS_DIR = DATA_DIR / "outputs" / "runs"
+INTERMEDIATE_DIR = DATA_DIR / "intermediate"
+BOUNDARIES_DIR = INPUTS_DIR / "boundaries"
 
 # Input data paths
-FOURSQUARE_PATH = INPUT_FILES_DIR / "uk_foursquare_cc_nov_iceberg.parquet"
-COMMERCIAL_LANDUSE_PATH = INPUT_FILES_DIR / "commercial_landuse.parquet"
-INDUSTRIAL_LANDUSE_PATH = INPUT_FILES_DIR / "industrial_landuse.parquet"
-RETAIL_LANDUSE_H3_GEO_PATH = INPUT_FILES_DIR / "retail_landuse_h3_geo.parquet"
-RETAIL_LANDUSE_POLYGONS_PATH = INPUT_FILES_DIR / "retail_landuse.parquet"
+FOURSQUARE_PATH = INPUTS_DIR / "poi" / "uk_foursquare_cc_nov_iceberg.parquet"
+LANDUSE_DIR = INPUTS_DIR / "landuse"
+COMMERCIAL_LANDUSE_PATH = LANDUSE_DIR / "commercial_landuse.parquet"
+INDUSTRIAL_LANDUSE_PATH = LANDUSE_DIR / "industrial_landuse.parquet"
+RETAIL_LANDUSE_H3_GEO_PATH = LANDUSE_DIR / "retail_landuse_h3_geo.parquet"
+RETAIL_LANDUSE_POLYGONS_PATH = LANDUSE_DIR / "retail_landuse.parquet"
 
 # Retail park brands data
-RETAIL_PARK_BRANDS_PATH = INPUT_FILES_DIR / "bl_retail_parks_brands_deduped.csv"
+BRANDS_DIR = INPUTS_DIR / "brands"
+RETAIL_PARK_BRANDS_PATH = BRANDS_DIR / "retail_park_brands.csv"
+
+# ONSPD (postcode data)
+ONSPD_DIR = INPUTS_DIR / "onspd"
 
 # Filter ID paths
-FILTER_IDS_PATH = POI_FILES_DIR / "quality_filter_ids.parquet"
+FILTER_IDS_PATH = INTERMEDIATE_DIR / "poi_filtered" / "quality_filter_ids.parquet"
 
 
 # ========================================
@@ -107,9 +112,6 @@ RANDOM_SEED = 505
 # Minimum POIs required for a H3 cell to be included
 DEFAULT_MIN_RETAIL_IN_CELL = 2
 
-# Minimum POIs required for isolated clusters (single-cell networks)
-DEFAULT_MIN_RETAIL_IN_ISLAND = 1
-
 # Minimum POIs required for final networks after processing
 DEFAULT_MIN_RETAIL_IN_NETWORK = 10
 
@@ -135,7 +137,6 @@ DEFAULT_MERGE_ADJACENT = True
 
 PARAM_SWEEP_SOURCES = ["foursquare"]
 PARAM_SWEEP_MIN_RETAIL_IN_CELL = [2]
-PARAM_SWEEP_MIN_RETAIL_IN_ISLAND = [1]
 PARAM_SWEEP_MIN_RETAIL_IN_NETWORK = [10]
 PARAM_SWEEP_MIN_TO_FILL = [6]
 PARAM_SWEEP_SPLIT_THRESHOLD = [1500, 9999999]
@@ -165,20 +166,19 @@ def get_output_folder_name(
     run_name: str,
     source: str,
     min_retail_in_cell: int,
-    min_retail_in_island: int,
     min_retail_in_network: int,
     min_to_fill: int,
     split_threshold: int,
     merge_adjacent: bool
 ) -> str:
     """
-    Generate output folder name from parameters.
+    Generate output folder name from parameters (without run_name prefix).
 
-    Format: {run_name}_{source}_mrc_{min_cell}_mri_{min_island}_mrn_{min_network}_mtf_{min_fill}_splitthresh_{threshold}_merge_{y/n}
+    Format: {source}_mrc_{min_cell}_mrn_{min_network}_mtf_{min_fill}_splitthresh_{threshold}_merge_{y/n}
     """
     merge_flag = "y" if merge_adjacent else "n"
     return (
-        f"{run_name}_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
+        f"{source}_mrc_{min_retail_in_cell}_"
         f"mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}"
         f"_merge_{merge_flag}"
     )

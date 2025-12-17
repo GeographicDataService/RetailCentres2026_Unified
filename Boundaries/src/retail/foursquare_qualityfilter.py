@@ -220,11 +220,11 @@ def _load_onspd_batched(onspd_dir: str, batch_size: int = 20) -> pl.DataFrame:
 
 def filter_postcode_mismatch_pois(
     foursquare: pl.DataFrame,
-    onspd_dir: str = "data/input_files/onspd",
+    onspd_dir: str = "data/inputs/onspd",
     distance_threshold_m: float = 1000.0,
     batch_size: int = 100000,
     save_removed: bool = True,
-    output_dir: str = "data/POI_files/postcode_mismatch_removed"
+    output_dir: str = "data/intermediate/postcode_mismatch_removed"
 ) -> pl.DataFrame:
     """
     Memory-optimized postcode mismatch filter.
@@ -261,9 +261,12 @@ def filter_postcode_mismatch_pois(
     print(f"  Loading ONSPD from {onspd_dir}...")
     try:
         onspd = _load_onspd_batched(onspd_dir, batch_size=20)
-    except FileNotFoundError:
-        print("  WARNING: No ONSPD files found, skipping filter")
-        return foursquare
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"ONSPD files not found in {onspd_dir}. "
+            f"Postcode mismatch filtering requires ONSPD data. "
+            f"Please download ONSPD data and place CSV files in {onspd_dir}/"
+        ) from e
 
     # Clean postcodes
     has_postcode = has_postcode.with_columns(
@@ -381,9 +384,9 @@ def filter_postcode_mismatch_pois(
 
 def filter_defunct_retailers(
     foursquare: pl.DataFrame,
-    defunct_csv_path: str = "data/input_files/defunct_uk_retailers_wikipedia_full.csv",
+    defunct_csv_path: str = "data/inputs/brands/defunct_retailers.csv",
     save_removed: bool = True,
-    output_dir: str = "data/POI_files/defunct_removed",
+    output_dir: str = "data/intermediate/defunct_removed",
     top_n_brands: int = 10,
     save_all_removed: bool = True
 ) -> pl.DataFrame:
@@ -397,7 +400,7 @@ def filter_defunct_retailers(
     - foursquare: polars.DataFrame containing Foursquare POI data with 'name', 'lat', 'lng' columns
     - defunct_csv_path: Path to CSV file with defunct retailers (must have 'Brand' column)
     - save_removed: Whether to save removed POIs and brand statistics (default: True)
-    - output_dir: Directory to save removed POI files (default: "data/POI_files/defunct_removed")
+    - output_dir: Directory to save removed POI files (default: "data/intermediate/defunct_removed")
     - top_n_brands: Number of top brands to save as separate GeoParquet files (default: 10)
     - save_all_removed: Whether to save complete file with ALL removed POIs (default: True)
 
@@ -541,7 +544,7 @@ def filter_defunct_retailers(
 
 def filter_by_uk_boundary(
     foursquare: pl.DataFrame,
-    boundary_path: str = "../data/input_files/Countries_December_2022_UK_BGC_1943732719298389253.gpkg",
+    boundary_path: str = "../data/inputs/boundaries/Countries_December_2022_UK_BGC_1943732719298389253.gpkg",
     buffer_m: int = 50,
     batch_size: int = 200000,
     save_outside: bool = False,
@@ -633,7 +636,7 @@ def filter_by_uk_boundary(
     # Save outside POIs
     if save_outside and len(outside_uk) > 0:
         if output_path is None:
-            output_path = "../data/POI_files/foursquare_outside_uk.parquet"
+            output_path = "../data/intermediate/foursquare_outside_uk.parquet"
         outside_uk.write_parquet(output_path)
         print(f"Outside POIs saved to: {output_path}")
 
@@ -645,7 +648,7 @@ def filter_duplicate_pois(
     name_threshold: float = 0.6,
     dist_thresh: float = 15.0,
     save_removed: bool = True,
-    output_dir: str = "data/POI_files/duplicates_removed"
+    output_dir: str = "data/intermediate/duplicates_removed"
 ) -> pl.DataFrame:
     """
     Remove duplicate POIs based on distance, address, and name/tel/website matching.
@@ -662,7 +665,7 @@ def filter_duplicate_pois(
     - name_threshold: Minimum name similarity ratio (0-1) to consider a match (default: 0.6)
     - dist_thresh: Maximum distance in meters to consider POIs nearby (default: 15m)
     - save_removed: Whether to save removed POIs and statistics (default: True)
-    - output_dir: Directory to save removed POI files (default: "data/POI_files/duplicates_removed")
+    - output_dir: Directory to save removed POI files (default: "data/intermediate/duplicates_removed")
 
     Returns:
     - polars.DataFrame with duplicate POIs removed
@@ -859,7 +862,7 @@ def filter_business_change_pois(
     coord_precision: int = 5,
     enable_same_date_safeguard: bool = True,
     save_removed: bool = True,
-    output_dir: str = "data/POI_files/business_changes_removed"
+    output_dir: str = "data/intermediate/business_changes_removed"
 ) -> pl.DataFrame:
     """
     Filter POIs where business changed but location wasn't properly refreshed.
@@ -1015,7 +1018,7 @@ def filter_business_change_pois(
 def filter_foreign_address_pois(
     foursquare: pl.DataFrame,
     save_removed: bool = True,
-    output_dir: str = "data/POI_files/foreign_addresses_removed"
+    output_dir: str = "data/intermediate/foreign_addresses_removed"
 ) -> pl.DataFrame:
     """
     Filter POIs with clearly non-UK addresses.
@@ -1162,7 +1165,7 @@ def filter_foreign_address_pois(
 
 def load_and_apply_presaved_filters(
     foursquare: pl.DataFrame,
-    filter_ids_path: str = "data/POI_files/quality_filter_ids.parquet"
+    filter_ids_path: str = "data/intermediate/poi_filtered/quality_filter_ids.parquet"
 ) -> pl.DataFrame:
     """
     Apply presaved quality filter results by removing POIs based on saved IDs.
@@ -1224,11 +1227,11 @@ def load_and_apply_presaved_filters(
 
 def filter_foursquare_quality(
     foursquare: pl.DataFrame,
-    boundary_path: str = "data/input_files/Countries_December_2022_UK_BGC_1943732719298389253.gpkg",
+    boundary_path: str = "data/inputs/boundaries/Countries_December_2022_UK_BGC_1943732719298389253.gpkg",
     buffer_m: int = 50,
     save_outside: bool = False,
     filter_defunct: bool = True,
-    defunct_csv_path: str = "data/input_files/defunct_uk_retailers_wikipedia_full.csv",
+    defunct_csv_path: str = "data/inputs/brands/defunct_retailers.csv",
     save_defunct_removed: bool = True,
     filter_duplicates: bool = True,
     duplicate_name_threshold: float = 0.6,
@@ -1242,10 +1245,10 @@ def filter_foursquare_quality(
     filter_postcode_mismatch: bool = True,
     postcode_mismatch_threshold_m: float = 1000.0,
     postcode_mismatch_batch_size: int = 100000,
-    onspd_dir: str = "data/input_files/onspd",
+    onspd_dir: str = "data/inputs/onspd",
     save_postcode_mismatch_removed: bool = True,
     save_filter_ids: bool = False,
-    filter_ids_path: str = "data/POI_files/quality_filter_ids.parquet"
+    filter_ids_path: str = "data/intermediate/poi_filtered/quality_filter_ids.parquet"
 ) -> pl.DataFrame:
     """
     Apply quality filters to the Foursquare DataFrame to remove low-quality entries.
@@ -1281,7 +1284,7 @@ def filter_foursquare_quality(
     - onspd_dir: Path to directory containing ONSPD CSV files
     - save_postcode_mismatch_removed: Whether to save removed postcode mismatches (default: True)
     - save_filter_ids: Whether to save POI IDs removed by each filter for reuse (default: False)
-    - filter_ids_path: Path to save filter IDs parquet file (default: "data/POI_files/quality_filter_ids.parquet")
+    - filter_ids_path: Path to save filter IDs parquet file (default: "data/intermediate/poi_filtered/quality_filter_ids.parquet")
 
     Returns:
     - polars.DataFrame after applying quality filters.
@@ -1322,7 +1325,7 @@ def filter_foursquare_quality(
             foursquare_filt,
             defunct_csv_path=defunct_csv_path,
             save_removed=save_defunct_removed,
-            output_dir="data/POI_files/defunct_removed",
+            output_dir="data/intermediate/defunct_removed",
             top_n_brands=10
         )
         if save_filter_ids:
@@ -1359,7 +1362,7 @@ def filter_foursquare_quality(
         foursquare_filt = filter_foreign_address_pois(
             foursquare_filt,
             save_removed=save_foreign_addresses_removed,
-            output_dir="data/POI_files/foreign_addresses_removed"
+            output_dir="data/intermediate/foreign_addresses_removed"
         )
         if save_filter_ids:
             removed_foreign = pre_filter_ids.join(
@@ -1381,7 +1384,7 @@ def filter_foursquare_quality(
             distance_threshold_m=postcode_mismatch_threshold_m,
             batch_size=postcode_mismatch_batch_size,
             save_removed=save_postcode_mismatch_removed,
-            output_dir="data/POI_files/postcode_mismatch_removed"
+            output_dir="data/intermediate/postcode_mismatch_removed"
         )
         if save_filter_ids:
             removed_postcode = pre_filter_ids.join(
@@ -1402,7 +1405,7 @@ def filter_foursquare_quality(
             name_threshold=duplicate_name_threshold,
             dist_thresh=duplicate_dist_thresh,
             save_removed=save_duplicates_removed,
-            output_dir="data/POI_files/duplicates_removed"
+            output_dir="data/intermediate/duplicates_removed"
         )
         if save_filter_ids:
             removed_duplicates = pre_filter_ids.join(
@@ -1423,7 +1426,7 @@ def filter_foursquare_quality(
             coord_precision=5,
             enable_same_date_safeguard=business_change_same_date_safeguard,
             save_removed=save_business_changes_removed,
-            output_dir="data/POI_files/business_changes_removed"
+            output_dir="data/intermediate/business_changes_removed"
         )
         if save_filter_ids:
             removed_business_changes = pre_filter_ids.join(

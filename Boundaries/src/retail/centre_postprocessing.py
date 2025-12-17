@@ -8,7 +8,7 @@ def add_localauthorities_to_centres(retail_centres: gpd.GeoDataFrame):
     """
 
     # Load Local Authority boundaries and set CRS
-    UK_LAD = gpd.read_file("data/Boundaries_lookups/Local_Authority_Districts_December_2022_UK_BGC_V2_5759908710055972638.gpkg")[['LAD22CD', 'LAD22NM', 'geometry']]
+    UK_LAD = gpd.read_file("data/inputs/boundaries/Local_Authority_Districts_December_2022_UK_BGC_V2_5759908710055972638.gpkg")[['LAD22CD', 'LAD22NM', 'geometry']]
     UK_LAD['LocalAuthorityTY'] = UK_LAD['LAD22CD'].map(lambda x: {
         'E0': 'LAD22CD',
         'W06': 'LAD22CD',

@@ -20,7 +20,6 @@ def generate_networks(
     run_name: str,
     source: str = "foursquare",
     min_retail_in_cell: int = 2,
-    min_retail_in_island: int = 10,
     min_retail_in_network: int = 10,
     min_to_fill: int = 5,
     split_threshold: int = 0,
@@ -43,14 +42,13 @@ def generate_networks(
         run_name=run_name,
         source=source,
         min_retail_in_cell=min_retail_in_cell,
-        min_retail_in_island=min_retail_in_island,
         min_retail_in_network=min_retail_in_network,
         min_to_fill=min_to_fill,
         split_threshold=split_threshold,
         merge_adjacent=merge_adjacent
     )
     print(f"Processing {folder_name} \n")
-    save_folder = config.OUTPUT_FILES_DIR / folder_name
+    save_folder = config.RUNS_DIR / run_name / folder_name
     save_folder.mkdir(parents=True, exist_ok=True)
     save_folder = str(save_folder)
 
@@ -96,14 +94,10 @@ def generate_networks(
     ut.to_parquet(cells_with_network, f"{save_folder}/1_intial_networks.parquet")
 
     # ------------------------------------------------------------------
-    # Filter networks by retail venue count and track node count
+    # Filter networks by retail venue count
     # ------------------------------------------------------------------
     filt_cells_with_network = cells_with_network.filter(
-        (
-            (cells_with_network[f"total_{source}_count"] >= min_retail_in_island)
-            | (cells_with_network["trackNodes"] >= 2)
-        )
-        & (cells_with_network[f"total_{source}_count"] >= min_retail_in_network)
+        cells_with_network[f"total_{source}_count"] >= min_retail_in_network
     ).sort("network_number")
 
     n_networks = filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]
@@ -202,7 +196,6 @@ def generate_networks(
         if not config.INDUSTRIAL_LANDUSE_PATH.exists():
             raise FileNotFoundError(f"Industrial landuse file missing: {config.INDUSTRIAL_LANDUSE_PATH}")
 
-        print("Applying landuse filter prior to subcentre processing...")
         centres_gdf = ut.to_geoframe(filt_cells_with_network)
         commercial_gdf = gpd.read_parquet(config.COMMERCIAL_LANDUSE_PATH)
         industrial_gdf = gpd.read_parquet(config.INDUSTRIAL_LANDUSE_PATH)

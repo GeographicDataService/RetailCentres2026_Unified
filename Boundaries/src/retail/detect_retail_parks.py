@@ -377,7 +377,7 @@ def identify_retail_parks(
             output_path_obj = Path(output_path)
             hist_path = output_path_obj.with_name(f"{output_path_obj.stem}_area_sqkm_hist.png")
         else:
-            hist_path = Path("data/output_files/retail_parks_area_sqkm_hist.png")
+            hist_path = Path("data/outputs/retail_parks_area_sqkm_hist.png")
 
     saved_hist = save_area_histogram(retail_parks, Path(hist_path))
     if saved_hist:

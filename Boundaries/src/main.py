@@ -37,7 +37,6 @@ run_name = args.run_name
 print(f"Run name: {run_name}")
 sources = config.PARAM_SWEEP_SOURCES
 min_retail_in_cell_values = config.PARAM_SWEEP_MIN_RETAIL_IN_CELL
-min_retail_in_island_values = config.PARAM_SWEEP_MIN_RETAIL_IN_ISLAND
 min_retail_in_network_values = config.PARAM_SWEEP_MIN_RETAIL_IN_NETWORK
 min_to_fill = config.PARAM_SWEEP_MIN_TO_FILL
 split_threshold = config.PARAM_SWEEP_SPLIT_THRESHOLD
@@ -47,7 +46,6 @@ merge_adjacent = config.PARAM_SWEEP_MERGE_ADJACENT
 param_combinations = itertools.product(
     sources,
     min_retail_in_cell_values,
-    min_retail_in_island_values,
     min_retail_in_network_values,
     min_to_fill,
     split_threshold,
@@ -81,9 +79,10 @@ foursquare = retailfilter.filter_foursquare(foursquare)
     .select(pl.col("fsq_category_labels").explode().alias("category"))
     .unique()
     .sort("category")
-    .write_csv("unique_categories.csv")
+    .write_csv("data/intermediate/unique_categories.csv")
 )
-
+#save the filtered foursquare data for reference
+foursquare.write_parquet("data/intermediate/foursquare_filtered.parquet")
 foursquare = ut.add_h3_11_column(foursquare)
 foursquare_cells = ut.agg_to_cells_foursquare(foursquare)
 
@@ -108,8 +107,9 @@ if config.INTEGRATE_RETAIL_PARKS:
     print("DETECTING RETAIL PARKS")
     print("="*80)
 
-    # Create retail parks output folder
-    retail_parks_output_dir = config.OUTPUT_FILES_DIR / f"retail_parks_{run_name}"
+    # Create retail parks output folder inside run directory
+    run_dir = config.RUNS_DIR / run_name
+    retail_parks_output_dir = run_dir / "retail_parks"
     retail_parks_output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save filtered POIs for retail park detection
@@ -150,7 +150,6 @@ else:
 for idx, (
     source,
     min_retail_in_cell,
-    min_retail_in_island,
     min_retail_in_network,
     min_to_fill,
     split_threshold,
@@ -158,7 +157,7 @@ for idx, (
 ) in enumerate(param_combinations_list, start=1):
     print(f"Processing combination {idx} of {total_combos}")
     print(
-        f"Parameters: source={source}, min_cell={min_retail_in_cell}, min_island={min_retail_in_island}, min_network={min_retail_in_network}, min_to_fill={min_to_fill}, split_threshold={split_threshold}, merge_adjacent={merge_adjacent}"
+        f"Parameters: source={source}, min_cell={min_retail_in_cell}, min_network={min_retail_in_network}, min_to_fill={min_to_fill}, split_threshold={split_threshold}, merge_adjacent={merge_adjacent}"
     )
 
     generate_networks(
@@ -166,7 +165,6 @@ for idx, (
         run_name=run_name,
         source=source,
         min_retail_in_cell=min_retail_in_cell,
-        min_retail_in_island=min_retail_in_island,
         min_retail_in_network=min_retail_in_network,
         min_to_fill=min_to_fill,
         split_threshold=split_threshold,

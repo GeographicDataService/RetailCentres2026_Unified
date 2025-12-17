@@ -904,8 +904,8 @@ def main():
     from retail.landuse_filter import run_landuse_filter
 
     # Default paths for commercial and industrial landuse
-    commercial_path = "data/input_files/commercial_landuse.parquet"
-    industrial_path = "data/input_files/industrial_landuse.parquet"  # Or same as commercial if not available
+    commercial_path = "data/inputs/landuse/commercial_landuse.parquet"
+    industrial_path = "data/inputs/landuse/industrial_landuse.parquet"  # Or same as commercial if not available
 
     # Check if files exist
     from pathlib import Path as PathLib

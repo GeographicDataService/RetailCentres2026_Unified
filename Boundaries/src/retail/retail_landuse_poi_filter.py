@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def filter_retail_landuse_by_pois(
     foursquare: pl.DataFrame,
     min_pois_per_polygon: int = 1,
-    retail_landuse_path: str = "data/input_files/retail_landuse.parquet",
-    output_h3_path: Optional[str] = "data/input_files/retail_landuse_h3_geo.parquet",
+    retail_landuse_path: str = "data/inputs/landuse/retail_landuse.parquet",
+    output_h3_path: Optional[str] = "data/inputs/landuse/retail_landuse_h3_geo.parquet",
     save_intermediates: bool = True
 ) -> pl.DataFrame:
     """
