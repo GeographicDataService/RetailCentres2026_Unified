@@ -7,6 +7,7 @@ Date: December 2025
 
 This document describes the algorithmic methodology for generating retail centre boundaries for the UK from open source point-of-interest (POI) and land use data. The pipeline implements a series of data cleaning, filtering, spatial aggregation, network construction, community detection, and post-processing steps to identify contiguous retail agglomerations and delineate their boundaries.
 
+
 ---
 ## Based On
 This methodology extends and refines the core approach detailed in:
@@ -20,6 +21,40 @@ https://github.com/GeographicDataService/Retail-Centre-Boundaries
 - **Land Use**: OpenStreetMap land use polygons (retail, commercial, industrial)
 
 ---
+
+---
+
+## Pipeline Structure
+
+```
+POI Data Preparation (Stages 1-2)
+├─ Stage 1: POI Quality Filtering
+└─ Stage 2: Retail Category Filtering
+         │
+         ├─────────────────────────────────────┬──────────────────────────────────────┐
+         │                                     │                                      │
+         ▼                                     ▼                                      │
+Traditional Retail Centre Pipeline    Retail Park Pipeline                           │
+(Stages 3-9)                          (Stages 10-11)                                 │
+                                                                                      │
+├─ Stage 3: H3 Spatial Aggregation       ├─ Stage 10: Retail Park Identification       │
+├─ Stage 4: Network Construction      └─ Stage 11: H3 Conversion and Aggregation    │
+├─ Stage 5: Network Thresholding                                                     │
+├─ Stage 6: Gap Filling                                                              │
+├─ Stage 7: Subcentre Detection                                                      │
+├─ Stage 8: Land Use Filtering                                                       │
+└─ Stage 9: Adjacent Centre Merging                                                  │
+         │                                     │                                      │
+         └─────────────────────────────────────┴──────────────────────────────────────┘
+                                               │
+                                               ▼
+                      Integration and Post-Processing (Stages 12-14)
+                      ├─ Stage 12: Integration of Traditional Centres and Retail Parks
+                      ├─ Stage 13: Boundary Finalization
+                      └─ Stage 14: Attribute Calculation and Assignment
+```
+
+
 
 ## Methodological Pipeline
 
@@ -143,69 +178,9 @@ Criteria for H3 Cell Inclusion:
 
 **Output:** Networks with interior gaps filled
 
-
-### Stage 8: Land Use Filtering
-
-**Objective:** Remove false positives in commercial/industrial areas
-
-**Implementation:** `src/retail/retail_landuse_poi_filter.py`
-
-**Exclusion Logic:**
-
-#### 8a: Commercial/Industrial Overlap
-**Data Source:** OSM `landuse=commercial` and `landuse=industrial` polygons
-
-**Overlap Calculation:**
-1. Spatial intersection of centre boundary with commercial/industrial polygons
-2. Compute `overlap_fraction = intersection_area / centre_area`
-
-**Threshold Rules:**
-- `overlap_fraction > 0.7` AND `total_pois < 100`: Remove (likely industrial estate)
-- `overlap_fraction > 0.9`: Remove regardless of size (pure commercial zone)
-- `total_pois ≥ 100`: Exempt from removal (likely genuine mixed-use centre)
-
-**Examples Filtered:**
-- Airport business parks (few restaurants, mostly commercial offices)
-- Industrial estates with trade counters
-- University campuses (student-only retail)
-
-#### 8b: Quality Assurance Checks
-- Manual review of centres near airports, stadiums, universities
-- Hardcoded exceptions in `src/retail/manual_edits.py` (~180 H3 cells)
-
-**Output:** Refined centre list with commercial/industrial false positives removed
-
 ---
 
-### Stage 9: Adjacent Centre Merging
-
-**Objective:** Reunite artificially fragmented continuous retail areas
-
-**Implementation:** `src/retail/network_merger.py` (post-processing phase)
-
-**Merge Criteria:**
-1. **Spatial proximity**: Centres separated by ≤1 empty cell
-2. One c
-3. **No competing centres**: Merging doesn't create multi-centre overlap
-
-**Typical Cases:**
-- High streets split by pedestrian crossings
-- Town centres divided by market squares or small parks
-- Shopping parades separated by residential blocks
-
-**Algorithm:**
-```
-FOR each centre pair:
-    IF separation == 1 cell AND both meet min_size:
-        IF no geometric conflicts:
-            MERGE into single centre
-            UPDATE statistics
-```
-
-**Output:** Merged centres with reduced artificial fragmentation
-
-
-### Stage 6: Subcentre Detection (Community Detection)
+### Stage 7: Subcentre Detection (Community Detection)
 
 **Objective:** Split large retail networks into subcentres based on POI density. Large retail areas (e.g., major city centres) often contain multiple distinct retail hubs. This stage identifies and delineates these subcentres within large networks.
 
@@ -230,59 +205,128 @@ FOR each centre pair:
   - Networks < 1500 POIs: No splitting (retain as single centre)
 
 
-**Output:** 
-Refined retail centres with subcentre delineation
+**Output:** Refined retail centres with subcentre delineation
 
 ---
 
-# Retail Park Creation (Big Box POI-based)
+### Stage 8: Land Use Filtering
 
-### Stage 1: Retail Park Detection (Parallel Branch)
+**Objective:** Remove false positives in commercial/industrial areas (industrial estates with trade counters, business parks with retail related POIs)
 
-This is a entirely separate method which works in parallel to the traditional centre detection pipeline, designed to identify large car-oriented retail parks which may not be well-captured, due to there dispersed layout and lower overall POI density. 
+**Implementation:** `src/retail/retail_landuse_poi_filter.py`
 
-**Objective:** Identify car-oriented big-box retail parks 
+**Exclusion Logic:**
+
+#### 8a: Commercial/Industrial Overlap
+**Data Source:** OSM `landuse=commercial` and `landuse=industrial` polygons
+
+**Overlap Calculation:**
+1. Spatial intersection of centre boundary with commercial/industrial polygons
+2. Compute `overlap_fraction = intersection_area / centre_area`
+
+**Threshold Rules:**
+- `overlap_fraction > 0.75` AND `total_pois < 20`: Remove (likely industrial estate)
+
+**Examples Filtered:**
+- Industrial estates with trade counters
+
+
+#### 8b: Quality Assurance Checks
+- Manual review of centres near airports, stadiums, universities
+- Hardcoded exceptions in `src/retail/manual_edits.py` (~180 H3 cells)
+
+**Output:** Refined centre list with commercial/industrial false positives removed
+
+---
+
+### Stage 9: Adjacent Centre Merging
+
+**Objective:** Reunite artificially fragmented continuous retail areas
+
+**Implementation:** `src/retail/network_merger.py` (post-processing phase)
+
+**Merge Criteria:**
+1. **Spatial proximity**: Centres separated by ≤1 empty cell
+2. **Size threshold**: At least one centre has POI count < `merge_h3_threshold` (default: 10)
+   - Smaller centre is merged into adjacent larger centre
+
+**Typical Cases:**
+- High streets split by pedestrian crossings
+- Town centres divided by market squares or small parks
+- Shopping parades separated by residential blocks
+
+**Algorithm:**
+```
+FOR each centre pair:
+    IF separation == 1 cell AND one_centre_pois < merge_h3_threshold:
+        MERGE smaller centre into larger centre
+        UPDATE statistics
+```
+
+**Output:** Merged centres with reduced artificial fragmentation
+
+---
+
+### Retail Park Pipeline (Stages 10-11)
+*Big-box POI-based detection - runs in parallel to traditional centre pipeline*
+
+This is an entirely separate method which works in parallel to the traditional centre detection pipeline, designed to identify large car-oriented retail parks which may not be well-captured due to their dispersed layout and lower overall POI density.
 
 **Implementation:** `src/retail/detect_retail_parks.py`
 
-**Methodology:**
+---
 
-#### 7a: OSM Retail Land Use Extraction
+### Stage 10: Retail Park Identification via OSM Land Use
+
+**Objective:** Identify car-oriented big-box retail parks using OSM land use polygons
+
 **Data Source:** OpenStreetMap `landuse=retail` polygons
+
 **Brand List:** List of large-format retailers
 - Eg DIY (B&Q, Homebase), electronics (Currys), furniture (IKEA, DFS), discount (B&M, Home Bargains)
-- NLP Pattern matching on POI names 
+- NLP Pattern matching on POI names
 
 **Retail Park Criteria:**
-1. Fraction  of POIs with in polygon which match big-box brands > 0.05 (5%) - this is low but there are very few false positives at this level. Raising any higher starts to remove genuine retail parks.
-2. Size greater than 0.07 km² (7000 m²) - ensures minimum spatial extent - this removes a small number of false positives in dense urban areas (Mainly london), where big box storers often exist in unusual formats (B&Q on high street etc)
+1. Fraction of POIs within polygon which match big-box brands > 0.05 (5%) - this is low but there are very few false positives at this level. Raising any higher starts to remove genuine retail parks.
+2. Size greater than 0.07 km² (7000 m²) - ensures minimum spatial extent - this removes a small number of false positives in dense urban areas (mainly London), where big box stores often exist in unusual formats (B&Q on high street etc)
 
 Passing this criteria marks the polygon as a retail park.
-We then convert the retail park polygons to H3 cells at resolution 11, and aggregate POI counts and other statistics in the same way as for traditional centres.
-If this aggreation results in parks with overlapping cells, we merge them into a single retail park. This handles cases where what is functionally a single retail park is mapped as multiple adjacent polygons in OSM. There are cases where too separate retail parks exist adjacent to each other (eg in out of town shopping areas) but these are rare and merging them is preferable as it creates a consistent dataset. The implementation of OSM retail land use mapping is quite inconsistent.
+
+**Output:** Retail park polygons meeting criteria
+
+---
+
+### Stage 11: H3 Conversion and Aggregation
+
+**Objective:** Convert retail park polygons to H3 cells and aggregate statistics
+
+**Process:**
+We convert the retail park polygons to H3 cells at resolution 11, and aggregate POI counts and other statistics in the same way as for traditional centres.
+
+If this aggregation results in parks with overlapping cells, we merge them into a single retail park. This handles cases where what is functionally a single retail park is mapped as multiple adjacent polygons in OSM. There are cases where two separate retail parks exist adjacent to each other (eg in out of town shopping areas) but these are rare and merging them is preferable as it creates a consistent dataset. The implementation of OSM retail land use mapping is quite inconsistent.
+
 **Output:** Retail park boundaries (distinct from traditional high streets) in H3 cells with aggregated POI statistics
 
 ---
 
-
-
-# Intergration and Post-Processing
-
-### Integration of Traditional Centres and Retail Parks
----
-The centre and retail park datasets are then integrated into a single unified retail centre dataset. This is done by adding the retail parks to the traditional centre dataset, in cases where they do not overlap with existing traditional centres. Where they do overlap, we "cut" the retail park out of the traditional centre to create separate entities. If the remaining traditional centre is just a stub and too small to be its own centre (below minimum POI threshold) it is merged into the retail park. OR if it does not pass the landuse filtering stage, it is removed entirely. (ie on commerical land surrounded by the retail park). 
-
-CLADUE add the function refs here.
-
-
-
-
+### Integration and Post-Processing (Stages 12-14)
+*Merging traditional centres and retail parks into unified dataset and finalization*
 
 ---
 
+### Stage 12: Integration of Traditional Centres and Retail Parks
 
+**Objective:** Merge centre and retail park datasets into unified retail centre dataset
 
-### Stage 11: Boundary Finalization
+**Implementation:** `src/retail/integrate_retail_parks.py`
+
+The centre and retail park datasets are integrated into a single unified retail centre dataset. This is done by adding the retail parks to the traditional centre dataset, in cases where they do not overlap with existing traditional centres. Where they do overlap, we "cut" the retail park out of the traditional centre to create separate entities. If the remaining traditional centre is just a stub and too small to be its own centre (below minimum POI threshold) it is merged into the retail park. OR if it does not pass the land use filtering stage, it is removed entirely (ie on commercial land surrounded by the retail park).
+
+**Output:** Unified retail centre dataset with parks integrated
+
+---
+
+### Stage 13: Boundary Finalization
 
 **Objective:** Convert H3 cells to publication-ready polygon boundaries
 
@@ -290,7 +334,7 @@ CLADUE add the function refs here.
 
 **Geometric Processing:**
 
-#### 11a: Polygon Dissolution
+#### 13a: Polygon Dissolution
 **Function:** `dissolve_h3_to_polygons()`
 
 **Process:**
@@ -298,30 +342,29 @@ CLADUE add the function refs here.
 2. Dissolve adjacent cells into single multipolygon per centre
 3. Simplify geometry (Douglas-Peucker algorithm, tolerance = 1m)
 
-#### 11b: Hole Filling
+#### 13b: Hole Filling
 **Criteria:** Fill interior holes (voids) in polygons
 - Removes small interior gaps (car parks, small parks)
 - Preserves exterior boundaries
-
 
 **Output:** Clean polygon geometries
 
 ---
 
-### Stage 12: Attribute Calculation and Assignment
+### Stage 14: Attribute Calculation and Assignment
 
 **Implementation:** `src/retail/centre_postprocessing.py::add_localauthorities_to_centres()`
 
 **Computed Attributes:**
 
-#### 12a: Retail Statistics
+#### 14a: Retail Statistics
 - `total_pois`: Total POI count
 - `retail_count`, `dining_count`, `entertainment_count`, `community_count`: Category breakdowns
 - `category_diversity`: Shannon entropy of category distribution
 - `area_m2`: Polygon area in square meters
 - `poi_density`: POIs per hectare
 
-#### 12b: Local Authority Assignment
+#### 14b: Local Authority Assignment
 **Method:** Spatial intersection with ONS Local Authority boundaries
 
 **Assignment Logic:**
@@ -330,7 +373,7 @@ CLADUE add the function refs here.
 3. Assign LA with maximum overlap (plurality rule)
 4. Add fields: `lad22cd` (LA code), `lad22nm` (LA name)
 
-#### 12c: Centre Ranking
+#### 14c: Centre Ranking
 **Ranking:** Descending by `total_pois`
 - `centre_rank`: National rank (1 = largest centre)
 - Enables size-based filtering and analysis
@@ -363,25 +406,24 @@ CLADUE add the function refs here.
 
 **Purpose:** Systematic evaluation of parameter combinations
 
-**Parameter Space:**
+**Current Parameter Values:**
 ```python
-min_retail_in_cell: [1, 2, 3]           # Cell inclusion threshold
-min_retail_in_island: [1, 2]            # Isolated cluster threshold
-min_retail_in_network: [5, 10, 15, 20]  # Network size threshold
-min_to_fill: [3, 4, 5, 6]               # Gap-filling aggressiveness
-split_threshold: [1000, 1500, 2000]     # Subcentre detection threshold
-merge_adjacent: [True, False]            # Enable/disable merging
+min_retail_in_cell: [2]                 # Cell inclusion threshold
+min_retail_in_network: [10]             # Network size threshold
+min_to_fill: [6]                        # Gap-filling (6 = fill holes only)
+split_threshold: [1500, 9999999]        # Subcentre detection threshold
+merge_adjacent: [True]                  # Enable/disable merging
 ```
 
 **Output Naming Convention:**
 ```
-{run_name}_{source}_mrc_{min_cell}_mri_{min_island}_mrn_{min_network}_mtf_{min_fill}_splitthresh_{threshold}_merge_{y/n}
+{run_name}/{source}_mrc_{min_cell}_mrn_{min_network}_mtf_{min_fill}_splitthresh_{threshold}_merge_{y/n}
 ```
 
 **Intermediate Outputs (per parameter combination):**
 - `0_input_cells.parquet`: Filtered H3 cells
-- `1_initial_networks.parquet`: Connected components
-- `2_merged_filtered_networks.parquet`: After merging/thresholding
+- `1_intial_networks.parquet`: Connected components
+- `2_filtered_networks.parquet`: After network thresholding
 - `3_afterfill.parquet`: After gap filling
 - `4_finalcentres.parquet`: Dissolved polygons
 - `4_finalcentres_las.parquet`: Final boundaries with LA assignments
