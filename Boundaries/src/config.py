@@ -28,9 +28,10 @@ INDUSTRIAL_LANDUSE_PATH = LANDUSE_DIR / "industrial_landuse.parquet"
 RETAIL_LANDUSE_H3_GEO_PATH = LANDUSE_DIR / "retail_landuse_h3_geo.parquet"
 RETAIL_LANDUSE_POLYGONS_PATH = LANDUSE_DIR / "retail_landuse.parquet"
 
-# Retail park brands data
-BRANDS_DIR = INPUTS_DIR / "brands"
-RETAIL_PARK_BRANDS_PATH = BRANDS_DIR / "retail_park_brands.csv"
+# Lookup tables (brand lists, defunct retailers)
+LOOKUP_TABLES_DIR = Path(__file__).parent / "config" / "lookup_tables"
+RETAIL_PARK_BRANDS_PATH = LOOKUP_TABLES_DIR / "retail_park_brands.csv"
+DEFUNCT_RETAILERS_PATH = LOOKUP_TABLES_DIR / "defunct_retailers.csv"
 
 # ONSPD (postcode data)
 ONSPD_DIR = INPUTS_DIR / "onspd"

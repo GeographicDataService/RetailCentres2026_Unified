@@ -10,6 +10,8 @@ import gc
 import glob
 import os
 
+import config
+
 
 # =============================================================================
 # UTILITY FUNCTIONS (Private Helpers)
@@ -384,7 +386,7 @@ def filter_postcode_mismatch_pois(
 
 def filter_defunct_retailers(
     foursquare: pl.DataFrame,
-    defunct_csv_path: str = "data/inputs/brands/defunct_retailers.csv",
+    defunct_csv_path: str = None,
     save_removed: bool = True,
     output_dir: str = "data/intermediate/defunct_removed",
     top_n_brands: int = 10,
@@ -407,6 +409,10 @@ def filter_defunct_retailers(
     Returns:
     - polars.DataFrame with defunct retailers removed
     """
+
+    # Use config path if none provided
+    if defunct_csv_path is None:
+        defunct_csv_path = str(config.DEFUNCT_RETAILERS_PATH)
 
     print(f"Loading defunct retailers from: {defunct_csv_path}")
     defunct_retailers = pl.read_csv(defunct_csv_path)
@@ -1231,7 +1237,7 @@ def filter_foursquare_quality(
     buffer_m: int = 50,
     save_outside: bool = False,
     filter_defunct: bool = True,
-    defunct_csv_path: str = "data/inputs/brands/defunct_retailers.csv",
+    defunct_csv_path: str = None,
     save_defunct_removed: bool = True,
     filter_duplicates: bool = True,
     duplicate_name_threshold: float = 0.6,
