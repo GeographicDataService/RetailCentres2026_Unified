@@ -674,17 +674,20 @@ def convert_retail_parks_to_h3(
     retail_parks_dissolved = retail_parks_polygons.copy()
     retail_parks_dissolved['park_id'] = range(len(retail_parks_dissolved))
 
-    # Save unmerged H3 cells if requested
+    # Save unmerged versions (baseline)
     if output_h3_path:
         retail_parks_h3_geo.to_parquet(output_h3_path, index=False)
         print(f"Saved unmerged H3 cells to: {output_h3_path}")
 
-    # Save unmerged polygons if requested
     if output_polygons_path:
         retail_parks_dissolved.to_parquet(output_polygons_path)
         print(f"Saved unmerged polygons to: {output_polygons_path}")
 
-    # Merge adjacent parks if requested
+    # Initialize final output with unmerged versions
+    final_h3 = retail_parks_h3_geo
+    final_polygons = retail_parks_dissolved
+
+    # Apply merge if requested
     if merge_adjacent:
         print()
         retail_parks_h3_merged, retail_parks_polygons_merged = merge_adjacent_parks(
@@ -703,154 +706,49 @@ def convert_retail_parks_to_h3(
             retail_parks_polygons_merged.to_parquet(merged_polygons_path)
             print(f"Saved merged polygons to: {merged_polygons_path}")
 
-        # Apply size filter to both merged and unmerged versions
-        if min_area_sqkm > 0:
-            print(f"\nApplying size filter ({min_area_sqkm} sqkm) to saved files...")
+        # Update final output to merged versions
+        final_h3 = retail_parks_h3_merged
+        final_polygons = retail_parks_polygons_merged
 
-            # Filter merged versions
-            merged_mask = retail_parks_polygons_merged['area_sqkm'] >= min_area_sqkm
-            merged_h3_filtered = retail_parks_h3_merged[
-                retail_parks_h3_merged['park_id'].isin(
-                    retail_parks_polygons_merged[merged_mask]['park_id']
-                )
-            ]
-            merged_poly_filtered = retail_parks_polygons_merged[merged_mask]
+    # Apply size filter if requested
+    if min_area_sqkm > 0:
+        print(f"\nApplying size filter ({min_area_sqkm} sqkm)...")
 
-            # Filter unmerged versions
-            unmerged_mask = retail_parks_dissolved['area_sqkm'] >= min_area_sqkm
-            unmerged_h3_filtered = retail_parks_h3_geo[
-                retail_parks_h3_geo['park_id'].isin(
-                    retail_parks_dissolved[unmerged_mask]['park_id']
-                )
-            ]
-            unmerged_poly_filtered = retail_parks_dissolved[unmerged_mask]
+        # Filter current final output
+        filter_mask = final_polygons['area_sqkm'] >= min_area_sqkm
+        final_h3_filtered = final_h3[
+            final_h3['park_id'].isin(final_polygons[filter_mask]['park_id'])
+        ]
+        final_polygons_filtered = final_polygons[filter_mask]
 
-            # Save filtered versions
-            if output_h3_path:
-                merged_h3_filtered_path = output_h3_path.replace('.parquet', '_merged_filtered.parquet')
-                merged_h3_filtered.to_parquet(merged_h3_filtered_path, index=False)
-                print(f"  Saved merged filtered H3: {merged_h3_filtered_path}")
+        # Save filtered versions
+        suffix = '_merged_filtered' if merge_adjacent else '_filtered'
 
-                unmerged_h3_filtered_path = output_h3_path.replace('.parquet', '_filtered.parquet')
-                unmerged_h3_filtered.to_parquet(unmerged_h3_filtered_path, index=False)
-                print(f"  Saved unmerged filtered H3: {unmerged_h3_filtered_path}")
+        if output_h3_path:
+            filtered_h3_path = output_h3_path.replace('.parquet', f'{suffix}.parquet')
+            final_h3_filtered.to_parquet(filtered_h3_path, index=False)
+            print(f"  Saved filtered H3: {filtered_h3_path}")
 
-            if output_polygons_path:
-                merged_poly_filtered_path = output_polygons_path.replace('.parquet', '_merged_filtered.parquet')
-                merged_poly_filtered.to_parquet(merged_poly_filtered_path)
-                print(f"  Saved merged filtered polygons: {merged_poly_filtered_path}")
+        if output_polygons_path:
+            filtered_polygons_path = output_polygons_path.replace('.parquet', f'{suffix}.parquet')
+            final_polygons_filtered.to_parquet(filtered_polygons_path)
+            print(f"  Saved filtered polygons: {filtered_polygons_path}")
 
-                unmerged_poly_filtered_path = output_polygons_path.replace('.parquet', '_filtered.parquet')
-                unmerged_poly_filtered.to_parquet(unmerged_poly_filtered_path)
-                print(f"  Saved unmerged filtered polygons: {unmerged_poly_filtered_path}")
+        print(f"  Parks before filter: {len(final_polygons)}")
+        print(f"  Parks after filter: {len(final_polygons_filtered)}")
+        print(f"  Parks removed: {len(final_polygons) - len(final_polygons_filtered)}")
 
-            print(f"\n  Merged: {len(retail_parks_polygons_merged)} → {len(merged_poly_filtered)} parks (removed {len(retail_parks_polygons_merged) - len(merged_poly_filtered)})")
-            print(f"  Unmerged: {len(retail_parks_dissolved)} → {len(unmerged_poly_filtered)} parks (removed {len(retail_parks_dissolved) - len(unmerged_poly_filtered)})")
+        # Update final output to filtered versions
+        final_h3 = final_h3_filtered
+        final_polygons = final_polygons_filtered
 
-        # Return merged versions
-        print("="*80)
-        print()
-        return retail_parks_h3_merged, retail_parks_polygons_merged
-    else:
-        # Return unmerged versions
-        print("="*80)
-        print()
-        return retail_parks_h3_geo, retail_parks_dissolved
+    # Single return with final processed output
+    print("\n" + "="*80)
+    print(f"Final output: {'merged' if merge_adjacent else 'unmerged'}, {'filtered' if min_area_sqkm > 0 else 'unfiltered'}")
+    print(f"  Parks: {final_polygons['park_id'].nunique():,}")
+    print(f"  H3 cells: {len(final_h3):,}")
+    print("="*80)
+    print()
+    return final_h3, final_polygons
 
 
-def main():
-    """
-    Main function for standalone testing.
-    """
-    import argparse
-    from datetime import datetime
-
-    # Create timestamped output folder
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(f"data/output_files/retail_parks_{timestamp}")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    parser = argparse.ArgumentParser(
-        description="Detect retail parks based on bigbox store brands"
-    )
-    parser.add_argument(
-        "--retail_landuse",
-        type=str,
-        default="data/input_files/retail_landuse.parquet",
-        help="Path to retail landuse parquet"
-    )
-    parser.add_argument(
-        "--foursquare",
-        type=str,
-        default="data/input_files/uk_foursquare_cc_nov_iceberg_fullfiltered_geo.parquet",
-        help="Path to Foursquare POIs parquet"
-    )
-    parser.add_argument(
-        "--brands",
-        type=str,
-        default="data/input_files/bl_retail_parks_brands_deduped.csv",
-        help="Path to retail park brands CSV"
-    )
-    parser.add_argument(
-        "--min_ratio",
-        type=float,
-        default=0.05,
-        help="Minimum ratio of bigbox to total POIs (default: 0.05 = 5%%)"
-    )
-    parser.add_argument(
-        "--min_matched",
-        type=int,
-        default=1,
-        help="Minimum number of bigbox POIs (default: 1)"
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default=None,
-        help="Output directory (default: timestamped folder)"
-    )
-
-    args = parser.parse_args()
-
-    # Use custom output dir if provided
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"\nOutput directory: {output_dir}\n")
-
-    # Build output paths
-    output_path = str(output_dir / "detected_retail_parks.parquet")
-    output_hist = str(output_dir / "retail_parks_area_hist.png")
-    output_h3 = str(output_dir / "retail_park_cells.parquet")
-    output_polygons = str(output_dir / "retail_parks_polygons.parquet")
-
-    retail_parks = identify_retail_parks(
-        retail_landuse_path=args.retail_landuse,
-        foursquare_pois_path=args.foursquare,
-        brands_csv_path=args.brands,
-        min_ratio=args.min_ratio,
-        min_matched_pois=args.min_matched,
-        output_path=output_path,
-        area_hist_path=output_hist
-    )
-
-    # Print summary statistics
-    print("TOP 20 RETAIL PARKS BY BIGBOX RATIO:")
-    print("-" * 80)
-    display_cols = ["matched_brand_count", "centre_poi_total", "matched_to_centre_ratio", "area_sqkm"]
-    if "name" in retail_parks.columns:
-        display_cols = ["name"] + display_cols
-
-    print(retail_parks[display_cols].head(20).to_string(index=False))
-
-    print("\n")
-    convert_retail_parks_to_h3(
-        retail_parks,
-        output_h3_path=output_h3,
-        output_polygons_path=output_polygons
-    )
-
-
-if __name__ == "__main__":
-    main()

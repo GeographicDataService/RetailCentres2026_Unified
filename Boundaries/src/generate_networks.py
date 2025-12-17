@@ -13,10 +13,7 @@ from retail import landuse_filter
 from retail import manual_edits
 from retail import network_merger
 from retail import integrate_retail_parks as retail_park_integration
-
-
-COMMERCIAL_LANDUSE_PATH = Path("data/input_files/commercial_landuse.parquet")
-INDUSTRIAL_LANDUSE_PATH = Path("data/input_files/industrial_landuse.parquet")
+import config
 
 def generate_networks(
     combined: pl.DataFrame,
@@ -33,8 +30,7 @@ def generate_networks(
     landuse_poi_threshold: Optional[int] = 20,
     integrate_retail_parks: bool = False,
     retail_parks_path: Optional[str] = None,
-    min_remainder_pois: int = 10,
-    merge_retail_parks: bool = True
+    min_remainder_pois: int = 10
 ) -> None:
     """
     Creates and processes retail centre networks from a combined Polars DataFrame.
@@ -43,15 +39,20 @@ def generate_networks(
     # ----------------------------------------
     # Set up output folder based on parameters
     # ----------------------------------------
-    merge_flag = "y" if merge_adjacent else "n"
-    folder_name = (
-        f"{run_name}_{source}_mrc_{min_retail_in_cell}_mri_{min_retail_in_island}_"
-        f"mrn_{min_retail_in_network}_mtf_{min_to_fill}_splitthresh_{split_threshold}"
-        f"_merge_{merge_flag}"
+    folder_name = config.get_output_folder_name(
+        run_name=run_name,
+        source=source,
+        min_retail_in_cell=min_retail_in_cell,
+        min_retail_in_island=min_retail_in_island,
+        min_retail_in_network=min_retail_in_network,
+        min_to_fill=min_to_fill,
+        split_threshold=split_threshold,
+        merge_adjacent=merge_adjacent
     )
     print(f"Processing {folder_name} \n")
-    os.makedirs(f"data/output_files/{folder_name}", exist_ok=True)
-    save_folder = f"data/output_files/{folder_name}"
+    save_folder = config.OUTPUT_FILES_DIR / folder_name
+    save_folder.mkdir(parents=True, exist_ok=True)
+    save_folder = str(save_folder)
 
     # --------------------------------------------------------
     # Manual edits: add and flag manually edited input cells
@@ -196,15 +197,15 @@ def generate_networks(
     pre_landuse_cells = filt_cells_with_network.clone()
 
     if enable_landuse_filter and filt_cells_with_network.height > 0:
-        if not COMMERCIAL_LANDUSE_PATH.exists():
-            raise FileNotFoundError(f"Commercial landuse file missing: {COMMERCIAL_LANDUSE_PATH}")
-        if not INDUSTRIAL_LANDUSE_PATH.exists():
-            raise FileNotFoundError(f"Industrial landuse file missing: {INDUSTRIAL_LANDUSE_PATH}")
+        if not config.COMMERCIAL_LANDUSE_PATH.exists():
+            raise FileNotFoundError(f"Commercial landuse file missing: {config.COMMERCIAL_LANDUSE_PATH}")
+        if not config.INDUSTRIAL_LANDUSE_PATH.exists():
+            raise FileNotFoundError(f"Industrial landuse file missing: {config.INDUSTRIAL_LANDUSE_PATH}")
 
         print("Applying landuse filter prior to subcentre processing...")
         centres_gdf = ut.to_geoframe(filt_cells_with_network)
-        commercial_gdf = gpd.read_parquet(COMMERCIAL_LANDUSE_PATH)
-        industrial_gdf = gpd.read_parquet(INDUSTRIAL_LANDUSE_PATH)
+        commercial_gdf = gpd.read_parquet(config.COMMERCIAL_LANDUSE_PATH)
+        industrial_gdf = gpd.read_parquet(config.INDUSTRIAL_LANDUSE_PATH)
 
         filter_result = landuse_filter.run_landuse_filter(
             centres=centres_gdf,
