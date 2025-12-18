@@ -19,10 +19,11 @@ INPUTS_DIR = DATA_DIR / "inputs"
 RUNS_DIR = DATA_DIR / "outputs" / "runs"
 INTERMEDIATE_DIR = DATA_DIR / "intermediate"
 BOUNDARIES_DIR = INPUTS_DIR / "boundaries"
+LANDUSE_DIR = INPUTS_DIR / "landuse"
 
 # Input data paths
 FOURSQUARE_PATH = INPUTS_DIR / "poi" / "uk_foursquare_cc_nov_iceberg.parquet"
-LANDUSE_DIR = INPUTS_DIR / "landuse"
+
 COMMERCIAL_LANDUSE_PATH = LANDUSE_DIR / "commercial_landuse.parquet"
 INDUSTRIAL_LANDUSE_PATH = LANDUSE_DIR / "industrial_landuse.parquet"
 RETAIL_LANDUSE_H3_GEO_PATH = LANDUSE_DIR / "retail_landuse_h3_geo.parquet"
@@ -35,6 +36,10 @@ DEFUNCT_RETAILERS_PATH = LOOKUP_TABLES_DIR / "defunct_retailers.csv"
 
 # ONSPD (postcode data)
 ONSPD_DIR = INPUTS_DIR / "onspd"
+
+
+
+## Intermediate output paths
 
 # Filter ID paths
 FILTER_IDS_PATH = INTERMEDIATE_DIR / "poi_filtered" / "quality_filter_ids.parquet"

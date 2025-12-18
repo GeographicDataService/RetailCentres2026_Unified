@@ -17,6 +17,10 @@ RetailCentres/
 │   ├── main.py                         # Parameter sweep workflow (recommended)
 │   ├── generate_networks.py            # Core pipeline orchestrator
 │   ├── config.py                       # Configuration parameters
+│   ├── config/
+│   │   └── lookup_tables/              # Reference data (committed to git)
+│   │       ├── defunct_retailers.csv   # Defunct UK retailer brands
+│   │       └── retail_park_brands.csv  # Big-box retail park brands
 │   ├── retail/                         # Core retail centre logic
 │   │   ├── retailfilter.py             # POI filtering
 │   │   ├── foursquare_qualityfilter.py # Quality filters for Foursquare data
@@ -29,7 +33,7 @@ RetailCentres/
 │   │   ├── landuse_filter.py           # Land use filtering
 │   │   └── retail_landuse_poi_filter.py
 │   └── utils/
-│       └── utils.py                    # H3 aggregation and geospatial utilities
+│       └── utils.py                    # H3 aggregation, network creation
 ├── data/
 │   ├── inputs/
 │   │   ├── poi/                        # Foursquare POI data
@@ -96,4 +100,40 @@ python src/utils/convtoshp.py output.parquet -f geojson
 ```bash
 pytest
 ```
+
+---
+
+## Acquiring Input Data
+
+The following input datasets are required but not included in this repository:
+
+### Core POI Data
+**Foursquare POI Data** - Use the Foursquare POI package 
+- Place in: `data/inputs/poi/`
+
+### OSM Land Use Data
+**OpenStreetMap Land Use** - Download from OSMNX using the provided script:
+```bash
+python src/grab_osm_landuse.py --landuse both
+```
+This creates H3 cell versions of retail and commercial land use areas.
+- Output location: `data/inputs/landuse/`
+- See `docs/OSM_LANDUSE_GRABBER.md` for detailed documentation
+
+### Administrative Boundaries
+
+**ONSPD (Postcode Directory)**
+- Source: [ONS Open Geography Portal - ONSPD](https://geoportal.statistics.gov.uk/search?q=ONSPD)
+- UK postcode to coordinate lookup data
+- Place in: `data/inputs/onspd/`
+
+**UK Country Boundary**
+- Source: [ONS Open Geography Portal - Countries (December 2022) Boundaries UK BGC](https://geoportal.statistics.gov.uk/datasets/countries-december-2022-boundaries-uk-bgc/explore)
+- GeoPackage format, used for filtering POIs to UK extent
+- Place in: `data/inputs/boundaries/`
+
+**Local Authority Boundaries**
+- Source: [ONS Open Geography Portal - Local Authority Districts (December 2022) Boundaries UK BGC](https://geoportal.statistics.gov.uk/datasets/local-authority-districts-december-2022-boundaries-uk-bgc/explore)
+- GeoPackage format, used for assigning centres to Local Authorities
+- Place in: `data/inputs/boundaries/`
 
