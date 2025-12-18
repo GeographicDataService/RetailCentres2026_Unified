@@ -13,7 +13,6 @@ and can be integrated to create distinct retail park boundaries.
 import geopandas as gpd
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import re
 import h3
 import networkx as nx
@@ -221,64 +220,13 @@ def compute_retail_park_metrics(
     return retail_landuse
 
 
-def save_area_histogram(
-    retail_parks: gpd.GeoDataFrame,
-    hist_path: Path,
-    bins: int = 30
-) -> Optional[Path]:
-    """Persist a histogram of park areas in square kilometres."""
-
-    if retail_parks.empty or "area_sqkm" not in retail_parks.columns:
-        return None
-
-    area_values = retail_parks["area_sqkm"].replace([np.inf, -np.inf], np.nan).dropna()
-    if area_values.empty:
-        return None
-
-    hist_path = Path(hist_path)
-    hist_path.parent.mkdir(parents=True, exist_ok=True)
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
-
-    ax_full, ax_zoom = axes
-
-    ax_full.hist(area_values, bins=bins, color="#2a9d8f", edgecolor="white")
-    ax_full.set_title("Retail park area distribution (sqkm)")
-    ax_full.set_xlabel("Area (sqkm)")
-    ax_full.set_ylabel("Number of parks")
-    ax_full.grid(axis="y", linestyle="--", alpha=0.4)
-
-    small_values = area_values[area_values <= 0.05]
-    if not small_values.empty:
-        ax_zoom.hist(small_values, bins=max(5, min(bins, 20)), color="#e76f51", edgecolor="white")
-        ax_zoom.set_xlim(0, 0.05)
-        ax_zoom.grid(axis="y", linestyle="--", alpha=0.4)
-    else:
-        ax_zoom.text(0.5, 0.5, "No parks ≤ 0.05 sqkm", ha="center", va="center", fontsize=10)
-        ax_zoom.set_xlim(0, 0.05)
-        ax_zoom.set_ylim(0, 1)
-
-    ax_zoom.set_title("Zoom: areas ≤ 0.05 sqkm")
-    ax_zoom.set_xlabel("Area (sqkm)")
-
-    for spine in ax_zoom.spines.values():
-        spine.set_alpha(0.6)
-
-    fig.tight_layout()
-    fig.savefig(hist_path, dpi=150)
-    plt.close(fig)
-
-    return hist_path
-
-
 def identify_retail_parks(
     retail_landuse_path: str,
     foursquare_pois_path: str,
     brands_csv_path: str,
     min_ratio: float = 0.05,
     min_matched_pois: int = 1,
-    output_path: Optional[str] = None,
-    area_hist_path: Optional[str] = None
+    output_path: Optional[str] = None
 ) -> gpd.GeoDataFrame:
     """
     Identify retail parks from retail landuse polygons based on bigbox brand presence.
@@ -290,7 +238,6 @@ def identify_retail_parks(
         min_ratio: Minimum ratio of bigbox POIs to total POIs (default: 0.05 = 5%)
         min_matched_pois: Minimum number of bigbox brand POIs (default: 1)
         output_path: Optional path to save results as parquet
-        area_hist_path: Optional path to save area histogram
 
     Returns:
         GeoDataFrame of identified retail parks with metrics
@@ -369,19 +316,6 @@ def identify_retail_parks(
     if output_path:
         retail_parks.to_parquet(output_path)
         print(f"Saved retail parks to: {output_path}")
-        print()
-
-    hist_path = area_hist_path
-    if hist_path is None:
-        if output_path:
-            output_path_obj = Path(output_path)
-            hist_path = output_path_obj.with_name(f"{output_path_obj.stem}_area_sqkm_hist.png")
-        else:
-            hist_path = Path("data/outputs/retail_parks_area_sqkm_hist.png")
-
-    saved_hist = save_area_histogram(retail_parks, Path(hist_path))
-    if saved_hist:
-        print(f"Saved area histogram to: {saved_hist}")
         print()
 
     print("="*80)

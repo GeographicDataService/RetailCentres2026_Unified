@@ -1,6 +1,20 @@
-data/
+# Ignore all data files but keep folder structure
+data/*
+!data/.gitkeep
+!data/inputs/
+data/inputs/*
+!data/inputs/.gitkeep
+!data/outputs/
+data/outputs/*
+!data/outputs/.gitkeep
+!data/intermediate/
+data/intermediate/*
+!data/intermediate/.gitkeep
+
 *.pyc
 *cache
 *.egg-info/
 notebooks/bankpoicheck/data
 notebooks/defunct_removed_top10
+notebooks/data/
+notebooks/mappingoutputs/

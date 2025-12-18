@@ -2,7 +2,8 @@
 import polars as pl
 import h3
 import geopandas as gpd
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import Polygon, MultiPolygon, Point
+import pandas as pd
 import networkx as nx
 from itertools import chain
 
@@ -24,6 +25,34 @@ def to_geoframe(df):
 def to_parquet(df, file_name):
     df = to_geoframe(df)
     df.to_parquet(file_name)
+
+
+def poi_to_geoframe(df):
+    """
+    Convert a Polars DataFrame with lat/lng columns to a GeoDataFrame with Point geometries.
+
+    Args:
+        df: Polars DataFrame with 'lat' and 'lng' columns
+
+    Returns:
+        GeoDataFrame with Point geometries in EPSG:4326
+    """
+    if isinstance(df, pl.DataFrame):
+        df = df.to_pandas()
+
+    # Create Point geometries from lat/lng
+    df["geometry"] = [
+        Point(lng, lat) if pd.notnull(lng) and pd.notnull(lat) else None
+        for lng, lat in zip(df["lng"], df["lat"])
+    ]
+
+    # Filter out rows with null geometries
+    df = df[df["geometry"].notnull()]
+
+    # Create GeoDataFrame in WGS84
+    gdf = gpd.GeoDataFrame(df, geometry="geometry", crs="EPSG:4326")
+
+    return gdf
 
 
 def add_h3_11_column(df: pl.DataFrame) -> pl.DataFrame:

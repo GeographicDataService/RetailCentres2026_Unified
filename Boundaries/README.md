@@ -112,6 +112,27 @@ pytest
 
 The following input datasets are required but not included in this repository:
 
+### Quick Start (GeoDS Members)
+
+**For GeoDS members:** A packaged version of all input files is available on SharePoint:
+- **Location:** `GeoDS > Shared Documents > 1 Data Products > Product Development > RetailCentreBounds2025 > inputs.zip`
+- **Direct link:** [Download inputs.zip](https://liveuclac.sharepoint.com/:u:/r/sites/GeoDS/Shared%20Documents/1%20Data%20Products/Product%20Development/RetailCentreBounds2025/inputs.zip?csf=1&web=1&e=pTauSG)
+- **Extract to:** `data/inputs/`
+- **Contents:** Foursquare POI data, OSM land use data, boundaries, reference data
+
+After extracting, your folder structure should look like:
+```
+data/inputs/
+├── poi/
+├── landuse/
+├── boundaries/
+└── reference/
+```
+
+### Manual Data Acquisition
+
+If you don't have GeoDS access, you can acquire the following datasets individually:
+
 ### Core POI Data
 **Foursquare POI Data** - Use the Foursquare POI package 
 - Place in: `data/inputs/poi/`

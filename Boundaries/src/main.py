@@ -81,8 +81,15 @@ foursquare = retailfilter.filter_foursquare(foursquare)
     .sort("category")
     .write_csv("data/intermediate/unique_categories.csv")
 )
-#save the filtered foursquare data for reference
-foursquare.write_parquet("data/intermediate/foursquare_filtered.parquet")
+
+# Create run directory and save filtered foursquare data as geoparquet
+run_dir = config.RUNS_DIR / run_name
+run_dir.mkdir(parents=True, exist_ok=True)
+print(f"Saving filtered POIs as geoparquet to {run_dir / 'foursquare_filtered.parquet'}...")
+foursquare_gdf = ut.poi_to_geoframe(foursquare)  # Convert lat/lng to Point geometries
+foursquare_gdf.to_parquet(run_dir / "foursquare_filtered.parquet")
+print(f"  ✓ Saved {len(foursquare_gdf):,} filtered POIs with Point geometries\n")
+
 foursquare = ut.add_h3_11_column(foursquare)
 foursquare_cells = ut.agg_to_cells_foursquare(foursquare)
 

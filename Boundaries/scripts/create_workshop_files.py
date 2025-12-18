@@ -149,14 +149,21 @@ def create_filtered_pois(poi_path: str, output_dir: str = "data/forarcgis"):
         pois = gpd.read_parquet(poi_path)
     except ValueError:
         # Not a geoparquet, read with pandas and convert
-        from shapely import wkb
+        from shapely.geometry import Point
         pois_df = pd.read_parquet(poi_path)
+
         if 'geometry' in pois_df.columns:
-            # Convert WKB to shapely geometry
+            # Convert WKB to shapely geometry if needed
+            from shapely import wkb
             pois_df['geometry'] = pois_df['geometry'].apply(lambda x: wkb.loads(bytes(x)) if x is not None else None)
             pois = gpd.GeoDataFrame(pois_df, geometry='geometry', crs='EPSG:4326')
+        elif 'lat' in pois_df.columns and 'lng' in pois_df.columns:
+            # Create geometry from lat/lng columns
+            print("  Creating geometry from lat/lng columns...")
+            geometry = [Point(lng, lat) for lng, lat in zip(pois_df['lng'], pois_df['lat'])]
+            pois = gpd.GeoDataFrame(pois_df, geometry=geometry, crs='EPSG:4326')
         else:
-            raise ValueError("POI file must have a 'geometry' column")
+            raise ValueError("POI file must have either a 'geometry' column or 'lat' and 'lng' columns")
 
     print(f"  Loaded {len(pois):,} POIs")
 
@@ -379,6 +386,78 @@ def create_retail_parks_clean(
     print("\nRetail parks clean geopackage created successfully!")
 
 
+def auto_find_files(run_dir: Path):
+    """
+    Automatically find all necessary files from a run directory.
+
+    Args:
+        run_dir: Path to the run directory
+
+    Returns:
+        Dictionary with paths to: split_centres, nosplit_centres, pois, retail_parks
+    """
+    run_dir = Path(run_dir)
+
+    if not run_dir.exists():
+        raise ValueError(f"Run directory does not exist: {run_dir}")
+
+    print(f"\nAuto-detecting files in: {run_dir}")
+    print("=" * 80)
+
+    # Find POI file (foursquare_filtered.parquet or similar)
+    poi_candidates = list(run_dir.glob("*filtered*.parquet"))
+    if not poi_candidates:
+        raise ValueError(f"No filtered POI file found in {run_dir}")
+    pois_path = poi_candidates[0]
+    print(f"✓ POIs: {pois_path.name}")
+
+    # Find split centres directory (splitthresh_1500)
+    split_dirs = list(run_dir.glob("*splitthresh_1500*"))
+    if not split_dirs:
+        raise ValueError(f"No split centres directory (splitthresh_1500) found in {run_dir}")
+    split_centres_path = split_dirs[0] / "4_finalcentres_las.parquet"
+    if not split_centres_path.exists():
+        raise ValueError(f"4_finalcentres_las.parquet not found in {split_dirs[0]}")
+    print(f"✓ Split centres: {split_dirs[0].name}/4_finalcentres_las.parquet")
+
+    # Find nosplit centres directory (splitthresh_99999 or splitthresh_9999999)
+    nosplit_dirs = list(run_dir.glob("*splitthresh_9999*"))
+    if not nosplit_dirs:
+        raise ValueError(f"No nosplit centres directory (splitthresh_9999*) found in {run_dir}")
+    nosplit_centres_path = nosplit_dirs[0] / "4_finalcentres_las.parquet"
+    if not nosplit_centres_path.exists():
+        raise ValueError(f"4_finalcentres_las.parquet not found in {nosplit_dirs[0]}")
+    print(f"✓ Nosplit centres: {nosplit_dirs[0].name}/4_finalcentres_las.parquet")
+
+    # Find retail parks (optional)
+    retail_parks_path = None
+    retail_parks_dir = run_dir / "retail_parks"
+    if retail_parks_dir.exists():
+        # Look for the merged_filtered version first, then merged, then regular
+        retail_park_candidates = [
+            retail_parks_dir / "retail_parks_polygons_merged_filtered.parquet",
+            retail_parks_dir / "retail_parks_polygons_merged.parquet",
+            retail_parks_dir / "retail_parks_polygons.parquet"
+        ]
+        for candidate in retail_park_candidates:
+            if candidate.exists():
+                retail_parks_path = candidate
+                print(f"✓ Retail parks: retail_parks/{candidate.name}")
+                break
+
+    if not retail_parks_path:
+        print("  (No retail parks found)")
+
+    print("=" * 80 + "\n")
+
+    return {
+        "split_centres": str(split_centres_path),
+        "nosplit_centres": str(nosplit_centres_path),
+        "pois": str(pois_path),
+        "retail_parks": str(retail_parks_path) if retail_parks_path else None
+    }
+
+
 if __name__ == "__main__":
     # Create timestamped output folder
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -387,19 +466,24 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Create postworkshopcentres GPKG files and filtered POI geopackage"
     )
+
+    # New simplified interface - just provide run directory
+    parser.add_argument(
+        "--run-dir",
+        help="Path to run directory (e.g., data/outputs/runs/final). Auto-detects all files."
+    )
+
+    # Original interface - provide individual files (backward compatible)
     parser.add_argument(
         "--split-centres",
-        required=True,
         help="Path to 4_finalcentres_las.parquet with splits (splitthresh_1500)"
     )
     parser.add_argument(
         "--nosplit-centres",
-        required=True,
         help="Path to 4_finalcentres_las.parquet without splits (splitthresh_99999)"
     )
     parser.add_argument(
         "--pois",
-        required=True,
         help="Path to filtered POI geoparquet file"
     )
     parser.add_argument(
@@ -415,6 +499,23 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # Determine which mode to use
+    if args.run_dir:
+        # Auto-detect mode
+        files = auto_find_files(args.run_dir)
+        split_centres = files["split_centres"]
+        nosplit_centres = files["nosplit_centres"]
+        pois = files["pois"]
+        retail_parks = files["retail_parks"]
+    elif args.split_centres and args.nosplit_centres and args.pois:
+        # Manual mode
+        split_centres = args.split_centres
+        nosplit_centres = args.nosplit_centres
+        pois = args.pois
+        retail_parks = args.retail_parks
+    else:
+        parser.error("Either --run-dir OR (--split-centres AND --nosplit-centres AND --pois) must be provided")
+
     # Use custom output dir if provided, otherwise use timestamped folder
     output_dir = args.output_dir if args.output_dir else str(default_output_dir)
 
@@ -424,24 +525,24 @@ if __name__ == "__main__":
 
     # Create workshopcentres files
     create_workshop_centres(
-        args.split_centres,
-        args.nosplit_centres,
+        split_centres,
+        nosplit_centres,
         output_dir
     )
 
     # Create filtered POI file
-    create_filtered_pois(args.pois, output_dir)
+    create_filtered_pois(pois, output_dir)
 
     # Create retail parks file (if provided)
-    if args.retail_parks:
-        create_retail_parks_gpkg(args.retail_parks, output_dir)
+    if retail_parks:
+        create_retail_parks_gpkg(retail_parks, output_dir)
 
     # Create clean centres file (with only RC_ID and category totals)
-    create_centres_clean(args.split_centres, output_dir)
+    create_centres_clean(split_centres, output_dir)
 
     # Create clean retail parks file (if provided)
-    if args.retail_parks:
-        create_retail_parks_clean(args.retail_parks, output_dir)
+    if retail_parks:
+        create_retail_parks_clean(retail_parks, output_dir)
 
     print("\n" + "="*80)
     print("ALL FILES CREATED SUCCESSFULLY!")
