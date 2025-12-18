@@ -14,6 +14,7 @@ dependencies = [
     "leidenalg>=0.10.2",
     "libpysal>=4.13.0",
     "networkx>=3.4.2",
+    "nltk>=3.9.1",
     "openrouteservice>=2.3.3",
     "osmium>=4.1.1",
     "osmnx>=2.0.3",
