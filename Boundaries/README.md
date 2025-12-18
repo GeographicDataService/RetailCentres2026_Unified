@@ -39,7 +39,6 @@ RetailCentres/
 │   │   ├── poi/                        # Foursquare POI data
 │   │   ├── boundaries/                 # Local Authority boundaries
 │   │   ├── landuse/                    # OSM land use data (H3 cells)
-│   │   ├── brands/                     # Brand classification data (defunct and big box)
 │   │   └── onspd/                      # UK postcode data
 │   ├── intermediate/                   # Pipeline stage outputs (0-3)
 │   └── outputs/                        # Final centre boundaries (4)
