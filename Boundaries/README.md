@@ -1,6 +1,6 @@
 # Retail Centres Project
 
-This project provides tools and scripts for identifying, analyzing, and exporting UK retail centre boundaries. The boundaries are created using open source POI (Point of Interest) data (Foursquare and/or Overture).
+This project provides tools and scripts for identifying, analyzing, and exporting UK retail centre boundaries. The boundaries are created using open source POI (Point of Interest) data (Foursquare) and landuse data (OSM)
 
 **Methodology:** See [method.md](method.md) for pipeline details.
 
