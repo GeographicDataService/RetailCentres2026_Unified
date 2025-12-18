@@ -70,8 +70,13 @@ For each parameter combination, the pipeline produces:
 
 ### Installation
 ```bash
+# Using uv (recommended)
 uv pip install -e .
+
+# Or pip
+pip install -e .
 ```
+
 
 ### Run Pipeline
 ```bash

@@ -67,39 +67,72 @@ Traditional Retail Centre Pipeline    Retail Park Pipeline                      
 
 **Objective:** Remove erroneous and low-quality POI records
 
-**Implementation:** `src/retail/foursquare_qualityfilter.py`
+**Implementation:** `src/retail/foursquare_qualityfilter.py::filter_foursquare_quality()`
 
-**Filters:**
-2. **Defunct retailers**: Historical chains (Woolworths, BHS, Comet, etc.) via pattern matching on venue names
-3. **Duplicate detection**:
-   - Spatial clustering of POIs within 10m radius
-   - Retention of most recently updated record
-4. **High-churn locations**: Addresses with >3 business failures in dataset history
-5. **Coordinate validation**:
-   - Foreign addresses incorrectly geocoded to UK (postcode-coordinate mismatch detection)
-   - Coordinates outside UK bounding box
+**Seven Sub-Filters Applied Sequentially:**
 
-**Output:** Cleaned POI dataset with validated coordinates and operational status
+1. **Closed Venues**: Removes POIs with non-null `date_closed` field
+
+2. **Defunct UK Retailers**: Pattern matching against ~180 historical UK retail chains (e.g., Woolworths, BHS, Blockbuster, Comet). Normalized name matching handles variations.
+
+3. **UK Boundary Filter**: Spatial join with UK boundary polygon (50m buffer). Removes POIs outside UK extent.
+
+4. **Foreign Addresses**: Detects non-UK addresses via pattern matching (US/CA/AU state codes, postal patterns, foreign country names). Safe passes for UK place names (e.g., "Canada Water").
+
+5. **Postcode Mismatches**: Cross-references coordinates with ONSPD (Office for National Statistics Postcode Directory). Removes POIs >1000m from postcode centroid (likely geocoding errors). Batched processing (100k POIs per batch).
+
+6. **Duplicate POIs**: Identifies duplicates based on distance <15m + same category + address match + (name similarity ≥60% OR telephone match OR website match). Uses H3 spatial index for efficient neighbor queries. Keeps most recently refreshed POI. Uses connected components for transitive duplicates.
+
+7. **Business Changes**: Detects same location (~1m precision) and same cat, with different business names. Keeps most recently created POI. Safeguard: bulk imports with same creation date kept entirely (e.g., outlet centers).
+
+
+**Output:** Quality-filtered POI dataset with validated coordinates, operational status, and deduplicated records
 
 ---
 
 ### Stage 2: Retail Category Filtering
 
-**Objective:** Define retail-relevant POI subset
+**Objective:** Filter to retail-relevant POI categories using Foursquare hierarchical taxonomy
 
 **Implementation:** `src/retail/retailfilter.py::filter_foursquare()`
 
-**Category Taxonomy:**
-POIs classified into four super-categories based on Foursquare Level 1 taxonomy:
-1. **Retail**: Shops, markets, convenience stores
-2. **Dining & Drinking**: Restaurants, cafes, bars, pubs
-3. **Arts & Entertainment**: Cinemas, theatres, galleries, nightlife
-4. **Community**: Personal services, health services, professional services accessible to public
+**Filter Logic Flow:**
 
-**Inclusion Rules:**
-- All POIs in super-categories 1-4
-- Excludes: warehouses, distribution centres, administrative offices, large event venues (stadiums, arenas), post boxes, parking infrastructure
+**Step 1: Positive Inclusion** (Level 1-4 category matching)
+- **Level 1 (all)**: Retail, Dining & Drinking, Arts & Entertainment
+- **Level 2-4 (selected)**:
+  - Business services: Health & Beauty, Pet Service, Photography Service, Locksmith, Funeral Home, Laundry
+  - Financial: Bank (L4), Credit Union, Real Estate Agency, Loans Agency
+  - Transport: Fuel Station, Travel Agency, Tourist Information
+  - Medical: Doctor's Office, Dentist, Veterinarian, Physical Therapy
+  - Community: Post Office, Library, Community Center, Social Club
+  - Sports: Gym & Studio, Indoor Play Area, Martial Arts Dojo, Swimming Pool (L4)
 
+**Step 2: Category-Level Exclusions** (removes matching category only, POI kept if other categories present)
+
+Organized by Level 1 parent category:
+- **Arts & Entertainment**: Amusement Park, Stadium, Zoo, Aquarium, Museum, Fair, Carnival, Circus, Exhibit, Disc Golf, Disc Golf Course, Go Kart Track
+- **Business & Professional Services**: Psychic & Astrologer, Photography service categories (Photographer, Photography Studio, Photography Lab)
+- **Retail**: Auction House, Vineyard, Construction Supplies Store, Outlet Mall, Shopping Mall, Shopping Plaza
+
+**Step 3: POI-Level Exclusions** (removes ENTIRE POI via anti-join on fsq_place_id)
+
+These POIs often have legitimate retail/business categories as secondary categories, but their primary function is non-retail. We remove the entire POI to prevent false positives (e.g., car dealerships with "Retail" or "Print Shop" categories, hospitals with "Doctor's Office" categories).
+
+- **Vehicle sales**: Car Dealership, Motorcycle Dealership, Motor Scooter Dealership
+- **Real estate development**: Real Estate Development & Title Company, Commercial Real Estate Developer (distinct from Real Estate Agency, which is retail)
+- **Healthcare facilities**: Hospital (removes confusion with Doctor's Office POIs)
+- **Marketing**: Advertising Agency (removes confusion with Print Shop retail category)
+- **Public infrastructure**: Public Art
+
+**Step 4: Name-Based Filters**
+- **Warehouses**: Removes "Warehouse or Wholesale Store" EXCEPT POIs named "Argos" (Argos has retail format)
+- **Costa Express**: Removes POIs with name containing both "Costa" AND "Express" (automated machines, not retail destinations)
+- **Post boxes**: Removes exact name matches: "Post Box", "Postbox", "Post box"
+- **Misclassified fuel stations**: Removes Fuel Station category POIs with car brand names + dealership keywords in name
+
+**Step 5: Deduplication**
+- Removes POIs with duplicate name + lat + lng (keeps one instance, removes multi-category duplicates)
 
 **Output:** Retail-relevant POI subset (~60-70% of quality-filtered dataset)
 
