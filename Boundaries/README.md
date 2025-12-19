@@ -1,11 +1,13 @@
-# Retail Centres Project
+# Retail Centre Boundaries
 
-This project provides tools and scripts for identifying, analyzing, and exporting UK retail centre boundaries. The boundaries are created using open source POI (Point of Interest) data (Foursquare) and landuse data (OSM)
+This project provides tools and scripts for identifying, analysing, and exporting UK retail centre boundaries. The boundaries are created using open source POI (Point of Interest) data (Foursquare) and landuse data (OSM)
 
+<img width="1407" height="726" alt="image" src="https://github.com/user-attachments/assets/57fa2bca-145c-400d-ab2b-0883a24c748e" />
+
+## Method 
 **Methodology:** See [method.md](method.md) for pipeline details.
 
-## References
-Previous boundaries:
+**Previous boundaries** :
 - [Retail Centre Boundaries and Open Indicators Dataset](https://data.geods.ac.uk/dataset/retail-centre-boundaries-and-open-indicators)
 - [Open Retail Centres: A National Open Data Set of Retail Centre Boundaries and Indicators (Nature Scientific Data, 2022)](https://www.nature.com/articles/s41597-022-01556-3)
 
