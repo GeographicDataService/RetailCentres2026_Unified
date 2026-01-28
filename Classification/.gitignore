@@ -1,0 +1,16 @@
+output/
+geo/
+docs/
+
+# Data (never commit)
+data/
+data/**
+data
+*.csv
+*.zip
+*.parquet
+*.gpkg
+
+
+# OS / editor
+.DS_Store
