@@ -65,6 +65,76 @@ def sanitize_column_names(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return gdf
 
 
+def add_split_tracking_columns(centres_split: gpd.GeoDataFrame, centres_nosplit: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Add was_split and Original_POI_count columns to split centres by comparing with nosplit version.
+
+    Logic:
+    - For each split centre, find the nosplit centre that contains its centroid
+    - If the nosplit centre has higher POI count, it was split
+    - Original_POI_count is the POI count from the nosplit version
+    """
+    print("\nCalculating split tracking columns...")
+
+    # Get the POI count column name (may vary)
+    poi_col = 'Total_POI_count' if 'Total_POI_count' in centres_split.columns else 'Total_Units'
+
+    # Create centroids for split centres
+    split_centroids = centres_split.copy()
+    split_centroids['centroid'] = split_centroids.geometry.centroid
+    split_centroids = split_centroids.set_geometry('centroid')
+
+    # Spatial join: find which nosplit centre contains each split centre's centroid
+    joined = gpd.sjoin(
+        split_centroids[['RC_ID', 'centroid', poi_col]],
+        centres_nosplit[['RC_ID', 'geometry', poi_col]],
+        how='left',
+        predicate='within'
+    )
+
+    # Rename columns for clarity
+    joined = joined.rename(columns={
+        'RC_ID_left': 'split_RC_ID',
+        'RC_ID_right': 'nosplit_RC_ID',
+        f'{poi_col}_left': 'split_poi_count',
+        f'{poi_col}_right': 'nosplit_poi_count'
+    })
+
+    # Handle cases where a split centre might match multiple nosplit centres (take first)
+    joined = joined.drop_duplicates(subset=['split_RC_ID'], keep='first')
+
+    # Determine was_split: True if nosplit POI count > split POI count
+    joined['was_split'] = joined['nosplit_poi_count'] > joined['split_poi_count']
+
+    # Original_POI_count: from nosplit version (or same as split if no match)
+    joined['Original_POI_count'] = joined['nosplit_poi_count'].fillna(joined['split_poi_count'])
+
+    # Merge back to original split centres
+    centres_split = centres_split.merge(
+        joined[['split_RC_ID', 'was_split', 'Original_POI_count']],
+        left_on='RC_ID',
+        right_on='split_RC_ID',
+        how='left'
+    ).drop(columns=['split_RC_ID'], errors='ignore')
+
+    # Fill any missing values (centres that didn't match)
+    centres_split['was_split'] = centres_split['was_split'].fillna(False)
+    centres_split['Original_POI_count'] = centres_split['Original_POI_count'].fillna(
+        centres_split[poi_col]
+    )
+
+    # Convert to appropriate types
+    centres_split['was_split'] = centres_split['was_split'].astype(bool)
+    centres_split['Original_POI_count'] = centres_split['Original_POI_count'].astype(int)
+
+    # Print summary
+    n_split = centres_split['was_split'].sum()
+    print(f"  Centres that were split: {n_split}")
+    print(f"  Centres not split: {len(centres_split) - n_split}")
+
+    return centres_split
+
+
 def create_workshop_centres(
     split_centres_path: str,
     nosplit_centres_path: str,
@@ -83,6 +153,9 @@ def create_workshop_centres(
     # Load centres without splits (splitthresh_99999)
     centres_nosplit = gpd.read_parquet(nosplit_centres_path)
     print(f"  Loaded {len(centres_nosplit)} centres without splits")
+
+    # Add split tracking columns (was_split, Original_POI_count)
+    centres_split = add_split_tracking_columns(centres_split, centres_nosplit)
 
     # Sanitize column names for ArcGIS compatibility
     print("\nSanitizing column names for ArcGIS Online...")
@@ -230,6 +303,7 @@ def create_retail_parks_gpkg(retail_parks_path: str, output_dir: str = "data/for
 
 def create_centres_clean(
     split_centres_path: str,
+    nosplit_centres_path: str,
     output_dir: str = "data/forarcgis"
 ):
     """Create clean centres GPKG with only RC_ID and category totals."""
@@ -241,6 +315,12 @@ def create_centres_clean(
     print(f"Loading centres from {split_centres_path}...")
     centres = gpd.read_parquet(split_centres_path)
     print(f"  Loaded {len(centres)} centres")
+
+    # Load nosplit centres for split tracking calculation
+    centres_nosplit = gpd.read_parquet(nosplit_centres_path)
+
+    # Add split tracking columns
+    centres = add_split_tracking_columns(centres, centres_nosplit)
 
     # Map potential column name variations to desired output names
     column_mapping = {
@@ -260,7 +340,9 @@ def create_centres_clean(
         'Community and Health (total)': 'Community and Health (total)',
         'community_health_total': 'Community and Health (total)',
         'Community & Health': 'Community and Health (total)',
-        'centre_type': 'Is Retail Park'
+        'centre_type': 'Is Retail Park',
+        'was_split': 'Was Split',
+        'Original_POI_count': 'Original POI Count',
     }
 
     # Find which columns exist and build the clean dataframe
@@ -538,7 +620,7 @@ if __name__ == "__main__":
         create_retail_parks_gpkg(retail_parks, output_dir)
 
     # Create clean centres file (with only RC_ID and category totals)
-    create_centres_clean(split_centres, output_dir)
+    create_centres_clean(split_centres, nosplit_centres, output_dir)
 
     # Create clean retail parks file (if provided)
     if retail_parks:
