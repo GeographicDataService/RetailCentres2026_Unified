@@ -131,8 +131,7 @@ if config.INTEGRATE_RETAIL_PARKS:
         brands_csv_path=str(config.RETAIL_PARK_BRANDS_PATH),
         min_ratio=config.RETAIL_PARK_MIN_RATIO,
         min_matched_pois=config.RETAIL_PARK_MIN_MATCHED_POIS,
-        output_path=str(retail_parks_output_dir / "detected_retail_parks.parquet"),
-        area_hist_path=str(retail_parks_output_dir / "retail_parks_area_hist.png")
+        output_path=str(retail_parks_output_dir / "detected_retail_parks.parquet")
     )
 
     # Convert to H3 cells
