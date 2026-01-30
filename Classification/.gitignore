@@ -1,6 +1,8 @@
 output/
 geo/
 docs/
+figure/
+old/
 
 # Data (never commit)
 data/
