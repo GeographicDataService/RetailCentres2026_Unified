@@ -145,14 +145,14 @@ rc_counties_region = rc_counties_region.drop(columns=["index_right"])
 
 # ---------- Buildup ----------
 #buildup = gpd.read_file("geo/buildup/buildup.shp")
-# 2011 version
+# 2011 version-----
 buildup = gpd.read_file(
     "geo/buildup/Built_up_Areas_Dec_2011_Boundaries_V2_2022_-9186664123850227917.gpkg"
 )
 buildup["gsscode"] = buildup["BUA11CD"]
 buildup["name1_text"] = buildup["BUA11NM"]
 buildup["fid"] = buildup["GlobalID"]
-
+#----------------
 buildup = buildup.to_crs(retail_centers.crs)
 buildup = buildup[["gsscode", "geometry", "name1_text", "fid"]]
 

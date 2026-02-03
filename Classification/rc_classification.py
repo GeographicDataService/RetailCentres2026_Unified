@@ -4,13 +4,14 @@ from pathlib import Path
 from shapely import wkt
 
 
-def apply_hierarchical_classification(df: pd.DataFrame, retail_park_rc_ids=None) -> pd.DataFrame:
+def apply_hierarchical_classification(
+    df: pd.DataFrame,
+    retail_park_rc_ids=None,
+    id_col: str = "RC_ID",
+) -> pd.DataFrame:
     df = df.copy()
     retail_park_rc_ids = set() if retail_park_rc_ids is None else set(retail_park_rc_ids)
 
-    # 1. HANDLE NA VALUES PROPERLY
-    # Instead of filling with "NA" before ranking, we rank first
-    # and then handle the NAs to match the R script logic.
     rank_specs = {
         "RGN_rank": "RegionName",
         "CTY_rank": "CountyName",
@@ -19,15 +20,12 @@ def apply_hierarchical_classification(df: pd.DataFrame, retail_park_rc_ids=None)
     }
 
     for rank_col, group_col in rank_specs.items():
-        # Preserve existing rank columns if they already exist
         if rank_col in df.columns:
             continue
-        # Only rank where the group name is NOT null
         mask = df[group_col].notna()
         df.loc[mask, rank_col] = df[mask].groupby(group_col)["LDC_retailN"].rank(
             method="first", ascending=False
         )
-        # If it was NA, give it a massive rank so it's never Rank 1
         df[rank_col] = df[rank_col].fillna(999999)
 
     df["tr_retailN"] = df.get("tr_retailN", df["LDC_retailN"])
@@ -36,73 +34,76 @@ def apply_hierarchical_classification(df: pd.DataFrame, retail_park_rc_ids=None)
     def assign(label: str, mask: pd.Series) -> None:
         df.loc[df["Classification"].isna() & mask, "Classification"] = label
 
-    # TIER 1: Regional (With Manual Overrides)
     assign("Regional Centre", (df["RGN_rank"] == 1))
-
-    # TIER 2: Major Town
-    assign("Major Town Centre", (df["CTY_rank"] == 1) & (df["RGN_rank"] != 1) & (df["LDC_retailN"] >= 350))
-
-    # TIER 3: Town Centre
-    assign("Town Centre",
-        ((df["CTY_rank"] == 1) & (df["RGN_rank"] != 1)) |
-        ((df["LAD_rank"] == 1) & (df["RGN_rank"] != 1) & (df["CTY_rank"] != 1)) |
-        ((df["LDC_retailN"] >= 250) & (df["LDC_retailN"] < 350))
+    assign(
+        "Major Town Centre",
+        (df["CTY_rank"] == 1) & (df["RGN_rank"] != 1) & (df["LDC_retailN"] >= 350),
     )
-
-    # TIER 4: Market Town
-    assign("Market Town",
-        (df["BUA_rank"] == 1) & (df["LAD_rank"] != 1) & (df["RGN_rank"] != 1) & (df["CTY_rank"] != 1) &
-        (df["tr_retailN"] >= 150) & (df["tr_retailN"] < 250)
+    assign(
+        "Town Centre",
+        ((df["CTY_rank"] == 1) & (df["RGN_rank"] != 1))
+        | ((df["LAD_rank"] == 1) & (df["RGN_rank"] != 1) & (df["CTY_rank"] != 1))
+        | ((df["LDC_retailN"] >= 250) & (df["LDC_retailN"] < 350)),
     )
-
-    # TIER 5: District Centre
-    assign("District Centre",
-        (df["BUA_rank"] != 1) & (df["LAD_rank"] != 1) & (df["RGN_rank"] != 1) & (df["CTY_rank"] != 1) &
-        (df["tr_retailN"] >= 150)
+    assign(
+        "Market Town",
+        (df["BUA_rank"] == 1)
+        & (df["LAD_rank"] != 1)
+        & (df["RGN_rank"] != 1)
+        & (df["CTY_rank"] != 1)
+        & (df["tr_retailN"] >= 150)
+        & (df["tr_retailN"] < 250),
     )
-
-    # TIER 6: Local Centre
+    assign(
+        "District Centre",
+        (df["BUA_rank"] != 1)
+        & (df["LAD_rank"] != 1)
+        & (df["RGN_rank"] != 1)
+        & (df["CTY_rank"] != 1)
+        & (df["tr_retailN"] >= 150),
+    )
     assign("Local Centre", df["tr_retailN"] < 150)
 
-    # REFINEMENT: Local -> Small Local
-    df.loc[(df["Classification"] == "Local Centre") & (df["tr_retailN"] < 100), "Classification"] = "Small Local Centre"
+    df.loc[(df["Classification"] == "Local Centre") & (df["tr_retailN"] < 100), "Classification"] = (
+        "Small Local Centre"
+    )
 
-    # FALLBACKS
     df.loc[df["Classification"].isna() & df["LDC_retailN"].notna(), "Classification"] = "Market Town"
     df["Classification"] = df["Classification"].fillna("Small Local Centre")
 
-    # RETAIL PARK ADJUSTMENT
-    retail_park_mask = (
-        (df["centre_type"] == "retail_park")
-    ) & (df["Classification"].isin(["Small Local Centre"]))
+    retail_park_mask = (df["centre_type"] == "retail_park") & (
+        df["Classification"].isin(["Small Local Centre"])
+    )
 
     df.loc[retail_park_mask, "Classification"] = "Retail Park"
-    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] < 50), "Classification"] = "Small Retail Park"
-    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] >= 50), "Classification"] = "Large Retail Park"
+    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] < 50), "Classification"] = (
+        "Small Retail Park"
+    )
+    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] >= 50), "Classification"] = (
+        "Large Retail Park"
+    )
 
-    return df.sort_values(["RegionName", "RC_ID"]).reset_index(drop=True)
+    return df.sort_values(["RegionName", id_col]).reset_index(drop=True)
 
 
 def apply_manual_edits(
     df: pd.DataFrame,
     rcid_lookup_csv: str = "output/rcid_lookup_old_to_new.csv",
     manual_hierarchy_csv: str | None = None,
+    group_col: str = "group_id",
 ) -> pd.DataFrame:
-    """
-    Manual classification edits + optional Manual_Hierarchy upgrades.
-    rcid_lookup_csv: path to rcid_lookup_old_to_new.csv
-    manual_hierarchy_csv: path to Manual_Hierarchy.csv (optional)
-    """
     df = df.copy()
 
-    # --- RC_ID mapping (old -> new) ---
     lookup = pd.read_csv(rcid_lookup_csv)
-    old_to_new = dict(zip(lookup["RC_ID"], lookup["new_rcid"]))
+    old_to_new = {}
+    for old_id, new_id in zip(lookup["RC_ID"], lookup["new_rcid"]):
+        old_to_new.setdefault(old_id, []).append(new_id)
 
-    def map_rcid(old_id: str) -> str:
-        return old_to_new.get(old_id, old_id)
+    def map_old_to_new_list(old_id: str):
+        return old_to_new.get(old_id, [old_id])
 
-    # --- Manual classification edits (old RC_IDs in the R code) ---
+    has_group = group_col in df.columns
+
     manual_classification_old = {
         "RC_EW_2920": "Market Town",
         "RC_SC_332": "Major Town Centre",
@@ -113,16 +114,19 @@ def apply_manual_edits(
         "RC_EW_3254": "Major Town Centre",
         "RC_EW_3301": "Major Town Centre",
         "RC_EW_3476": "Major Town Centre",
-        "RC_EW_3522": "Regional Centre",  # plus Bristol
-        "RC_EW_2751": "Regional Centre",  # plus Liverpool One
-        "RC_SC_280": "Regional Centre",  # plus Edinburgh
+        "RC_EW_3522": "Regional Centre",
+        "RC_EW_2751": "Regional Centre",
+        "RC_SC_280": "Regional Centre",
     }
 
-    manual_classification = {map_rcid(k): v for k, v in manual_classification_old.items()}
-    for rcid, cls in manual_classification.items():
-        df.loc[df["RC_ID"] == rcid, "Classification"] = cls
+    for old_id, cls in manual_classification_old.items():
+        new_ids = map_old_to_new_list(old_id)
+        if has_group:
+            target_groups = df.loc[df["RC_ID"].isin(new_ids), group_col].unique()
+            df.loc[df[group_col].isin(target_groups), "Classification"] = cls
+        else:
+            df.loc[df["RC_ID"].isin(new_ids), "Classification"] = cls
 
-    # --- Manual hierarchy list (upgrade Town Centre -> Major Town Centre) ---
     if manual_hierarchy_csv:
         manual_path = Path(manual_hierarchy_csv)
         if manual_path.exists():
@@ -130,9 +134,17 @@ def apply_manual_edits(
             rc_manual = rc_manual.loc[
                 rc_manual["H_Classification"] == "Major Town Centre", "RC_ID"
             ].dropna()
-            rc_manual = [map_rcid(x) for x in rc_manual.astype(str).unique()]
 
-            mask = (df["RC_ID"].isin(rc_manual)) & (df["Classification"] == "Town Centre")
+            new_ids = []
+            for old_id in rc_manual.astype(str).unique():
+                new_ids.extend(map_old_to_new_list(old_id))
+
+            if has_group:
+                target_groups = df.loc[df["RC_ID"].isin(new_ids), group_col].unique()
+                mask = df[group_col].isin(target_groups) & (df["Classification"] == "Town Centre")
+            else:
+                mask = df["RC_ID"].isin(new_ids) & (df["Classification"] == "Town Centre")
+
             df.loc[mask, "Classification"] = "Major Town Centre"
 
     return df
@@ -143,21 +155,8 @@ def apply_shopping_outlet_overrides(
     rc_uk_path: str = "geo/postworkshopcentres.gpkg",
     rcid_lookup_csv: str = "output/rcid_lookup_old_to_new.csv",
 ) -> pd.DataFrame:
-    """
-    Manual outlet locations (spatial intersection + explicit ID overrides).
-    rc_uk_path: path to postworkshopcentres.gpkg
-    rcid_lookup_csv: path to rcid_lookup_old_to_new.csv
-    """
     df = df.copy()
 
-    # --- RC_ID mapping (old -> new) ---
-    lookup = pd.read_csv(rcid_lookup_csv)
-    old_to_new = dict(zip(lookup["RC_ID"], lookup["new_rcid"]))
-
-    def map_rcid(old_id: str) -> str:
-        return old_to_new.get(old_id, old_id)
-
-    # --- Manual outlet locations ---
     outlets = pd.DataFrame(
         [
             ("Regional Shopping Centre", "Westfield London", 51.50768597440922, -0.22088352838801395),
@@ -237,14 +236,22 @@ def apply_shopping_outlet_overrides(
     }
 
     manual_override = outlets_gdf[outlets_gdf["Name"].isin(manual_outlet_rcids_old)].copy()
-    manual_override["RC_ID"] = manual_override["Name"].map(manual_outlet_rcids_old).map(map_rcid)
+    manual_override["RC_ID"] = manual_override["Name"].map(manual_outlet_rcids_old)
     manual_override = manual_override[["Type", "RC_ID"]].dropna(subset=["RC_ID"])
 
     outlets_tag = pd.concat([outlets_tag, manual_override], ignore_index=True)
 
-    df = df.merge(outlets_tag, on="RC_ID", how="left", sort=False)
-    df.loc[df["Type"].notna(), "Classification"] = df.loc[df["Type"].notna(), "Type"]
-    df = df.drop(columns=["Type"])
+    lookup = pd.read_csv(rcid_lookup_csv)
+    old_to_new = dict(zip(lookup["RC_ID"], lookup["new_rcid"]))
+
+    def map_rcid(old_id: str) -> str:
+        return old_to_new.get(old_id, old_id)
+
+    outlets_tag["RC_ID"] = outlets_tag["RC_ID"].map(map_rcid)
+
+    df["RC_ID"] = df["RC_ID"].astype(str)
+    outlets_tag["RC_ID"] = outlets_tag["RC_ID"].astype(str)
+    df.loc[df["RC_ID"].isin(outlets_tag["RC_ID"]), "Classification"] = "Out of Town Shopping Centres"
 
     return df
 
@@ -260,60 +267,47 @@ def apply_out_of_town_sizing(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def classify_using_split_groups(
-    df: pd.DataFrame,
-    split_df: pd.DataFrame,
-    parent_col: str = "Parent_RC_ID",
+def classify_with_grouping(
+    rc_geo: pd.DataFrame,
+    rc_split: pd.DataFrame,
+    parent_col: str = "Parent_ID",
     split_col: str = "was_split",
-    id_col: str = "RC_ID",
 ) -> pd.DataFrame:
-    df = df.copy()
-
-    # attach split info
-    df = df.merge(split_df[[id_col, split_col, parent_col]], on=id_col, how="left")
-
-    # group id: parent if split, else own id
-    df["group_id"] = df[id_col]
-    df.loc[df[split_col] == True, "group_id"] = df.loc[df[split_col] == True, parent_col]
-
-    # use admin fields from the group_id itself
-    admin_cols = ["RegionName", "CountyName", "LAD24NM", "gsscode", "centre_type"]
-    admin_lookup = (
-        df[[id_col] + admin_cols]
-        .drop_duplicates(subset=[id_col])
-        .set_index(id_col)
+    df = rc_geo.merge(
+        rc_split[["RC_ID", split_col, parent_col]],
+        on="RC_ID",
+        how="left",
     )
 
-    # aggregate metrics + attach admin fields for the group_id
+    is_split = df[split_col].astype(str).str.lower().isin(["true", "1", "yes"])
+    df["group_id"] = df["RC_ID"].astype(str)
+    df.loc[is_split, "group_id"] = "P_" + df.loc[is_split, parent_col].astype(str)
+
     group_df = (
         df.groupby("group_id", dropna=False)
         .agg(
             LDC_retailN=("tr_retailN", "sum"),
+            RegionName=("RegionName", "first"),
+            CountyName=("CountyName", "first"),
+            LAD24NM=("LAD24NM", "first"),
+            gsscode=("gsscode", "first"),
+            centre_type=("centre_type", "first"),
         )
         .reset_index()
-        .rename(columns={"group_id": "RC_ID"})
-        .merge(admin_lookup, left_on="RC_ID", right_index=True, how="left")
     )
 
-    # classify at group level
-    group_df = apply_hierarchical_classification(group_df)
-    group_df = apply_manual_edits(group_df)
-    group_df = apply_shopping_outlet_overrides(group_df)
-    group_df = apply_out_of_town_sizing(group_df)
+    group_df = apply_hierarchical_classification(group_df, id_col="group_id")
+    group_df.rename(columns={"LDC_retailN": "group_LDC_retailN"}, inplace=True)
 
-    # bring group classification back to original rows
     df = df.merge(
-        group_df[["RC_ID", "Classification"]],
-        left_on="group_id", right_on="RC_ID",
-        how="left", suffixes=("", "_group")
+        group_df[["group_id", "group_LDC_retailN", "Classification"]],
+        on="group_id",
+        how="left",
     )
-    if "Classification_group" in df.columns:
-        df["Classification_join"] = df["Classification_group"]
-    else:
-        df["Classification_join"] = df["Classification"]
 
-    # cleanup
-    df = df.drop(columns=["Classification_group", "group_id", split_col, parent_col], errors="ignore")
+    df = apply_manual_edits(df)
+    df = apply_shopping_outlet_overrides(df)
+    df = apply_out_of_town_sizing(df)
 
     return df
 
@@ -322,13 +316,9 @@ def _maybe_parse_wkt(series: pd.Series) -> pd.Series:
     return series.apply(lambda geom: wkt.loads(geom) if isinstance(geom, str) else geom)
 
 
-def _load_rc_geo(
-    rc_lookups_csv: str,
-    rc_ldc_csv: str,
-    crs: str,
-) -> gpd.GeoDataFrame:
-    rc_lookups = pd.read_csv(rc_lookups_csv)
-    rc_ldc = pd.read_csv(rc_ldc_csv)
+def _load_rc_geo(lookups_csv: str, ldc_csv: str, crs: str) -> gpd.GeoDataFrame:
+    rc_lookups = pd.read_csv(lookups_csv)
+    rc_ldc = pd.read_csv(ldc_csv)
 
     rc = rc_ldc.merge(
         rc_lookups.drop(columns=["geometry"], errors="ignore"),
@@ -350,7 +340,7 @@ def main() -> None:
     rc_lookups_csv = "output/rc_lookups.csv"
     rc_ldc_csv = "output/retail_centers_with_ldc_retailN.csv"
     split_path = "geo/postworkshopcentres_withsplit1.gpkg"
-    split_parent_col = "Parent_RC_ID"
+    split_parent_col = "Parent_ID"
     split_flag_col = "was_split"
 
     output_gpkg = "output/rc2025_classified_joined.gpkg"
@@ -360,9 +350,9 @@ def main() -> None:
 
     if Path(split_path).exists():
         split_df = gpd.read_file(split_path)
-        df_out = classify_using_split_groups(
-            df=rc_geo,
-            split_df=split_df,
+        df_out = classify_with_grouping(
+            rc_geo=rc_geo,
+            rc_split=split_df,
             parent_col=split_parent_col,
             split_col=split_flag_col,
         )
