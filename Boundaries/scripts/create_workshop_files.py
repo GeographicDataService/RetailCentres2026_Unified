@@ -67,26 +67,44 @@ def sanitize_column_names(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 def add_split_tracking_columns(centres_split: gpd.GeoDataFrame, centres_nosplit: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
-    Add was_split and Original_POI_count columns to split centres by comparing with nosplit version.
+    Add was_split, Original_POI_count, Parent_RC_ID columns and update RC_ID for split centres.
 
-    Logic:
-    - For each split centre, find the nosplit centre that contains its centroid
-    - If the nosplit centre has higher POI count, it was split
-    - Original_POI_count is the POI count from the nosplit version
+    ID Scheme:
+    - Non-split centres (was_split == False):
+      - RC_ID = nosplit RC_ID (the stable ID)
+      - Parent_RC_ID = same as RC_ID
+
+    - Split centres (was_split == True):
+      - Parent_RC_ID = nosplit RC_ID (links all splits to same parent)
+      - RC_ID = "{Parent_RC_ID}_{sequence}" where sequence is 1, 2, 3...
+        (ordered by POI count descending, so largest split gets _1)
+
+    Example:
+      Original centre 456 (1800 POIs) splits into 3 subcentres:
+        - RC_ID: "456_1", Parent_RC_ID: 456, POIs: 700
+        - RC_ID: "456_2", Parent_RC_ID: 456, POIs: 650
+        - RC_ID: "456_3", Parent_RC_ID: 456, POIs: 450
+
+      Non-split centre 789 stays as:
+        - RC_ID: "789", Parent_RC_ID: 789
     """
     print("\nCalculating split tracking columns...")
 
     # Get the POI count column name (may vary)
     poi_col = 'Total_POI_count' if 'Total_POI_count' in centres_split.columns else 'Total_Units'
 
-    # Create centroids for split centres
-    split_centroids = centres_split.copy()
-    split_centroids['centroid'] = split_centroids.geometry.centroid
-    split_centroids = split_centroids.set_geometry('centroid')
+    # Store original RC_ID for reference
+    centres_split['original_split_RC_ID'] = centres_split['RC_ID']
 
-    # Spatial join: find which nosplit centre contains each split centre's centroid
+    # Create representative points for split centres (guaranteed to be inside the polygon,
+    # unlike centroid which can fall outside for highly concave shapes)
+    split_centroids = centres_split.copy()
+    split_centroids['rep_point'] = split_centroids.geometry.representative_point()
+    split_centroids = split_centroids.set_geometry('rep_point')
+
+    # Spatial join: find which nosplit centre contains each split centre's representative point
     joined = gpd.sjoin(
-        split_centroids[['RC_ID', 'centroid', poi_col]],
+        split_centroids[['original_split_RC_ID', 'rep_point', poi_col]],
         centres_nosplit[['RC_ID', 'geometry', poi_col]],
         how='left',
         predicate='within'
@@ -94,14 +112,13 @@ def add_split_tracking_columns(centres_split: gpd.GeoDataFrame, centres_nosplit:
 
     # Rename columns for clarity
     joined = joined.rename(columns={
-        'RC_ID_left': 'split_RC_ID',
-        'RC_ID_right': 'nosplit_RC_ID',
+        'RC_ID': 'nosplit_RC_ID',
         f'{poi_col}_left': 'split_poi_count',
         f'{poi_col}_right': 'nosplit_poi_count'
     })
 
     # Handle cases where a split centre might match multiple nosplit centres (take first)
-    joined = joined.drop_duplicates(subset=['split_RC_ID'], keep='first')
+    joined = joined.drop_duplicates(subset=['original_split_RC_ID'], keep='first')
 
     # Determine was_split: True if nosplit POI count > split POI count
     joined['was_split'] = joined['nosplit_poi_count'] > joined['split_poi_count']
@@ -109,28 +126,87 @@ def add_split_tracking_columns(centres_split: gpd.GeoDataFrame, centres_nosplit:
     # Original_POI_count: from nosplit version (or same as split if no match)
     joined['Original_POI_count'] = joined['nosplit_poi_count'].fillna(joined['split_poi_count'])
 
+    # Parent_RC_ID: the RC_ID of the nosplit centre (for linking split centres)
+    # For unmatched centres, use their original split RC_ID
+    joined['Parent_RC_ID'] = joined['nosplit_RC_ID'].fillna(joined['original_split_RC_ID'])
+
     # Merge back to original split centres
     centres_split = centres_split.merge(
-        joined[['split_RC_ID', 'was_split', 'Original_POI_count']],
-        left_on='RC_ID',
-        right_on='split_RC_ID',
+        joined[['original_split_RC_ID', 'was_split', 'Original_POI_count', 'Parent_RC_ID', 'nosplit_RC_ID']],
+        on='original_split_RC_ID',
         how='left'
-    ).drop(columns=['split_RC_ID'], errors='ignore')
+    )
 
     # Fill any missing values (centres that didn't match)
     centres_split['was_split'] = centres_split['was_split'].fillna(False)
     centres_split['Original_POI_count'] = centres_split['Original_POI_count'].fillna(
         centres_split[poi_col]
     )
+    centres_split['Parent_RC_ID'] = centres_split['Parent_RC_ID'].fillna(
+        centres_split['original_split_RC_ID']
+    )
 
-    # Convert to appropriate types
+    # Convert Parent_RC_ID and Original_POI_count to appropriate types
     centres_split['was_split'] = centres_split['was_split'].astype(bool)
     centres_split['Original_POI_count'] = centres_split['Original_POI_count'].astype(int)
+    centres_split['Parent_RC_ID'] = centres_split['Parent_RC_ID'].astype(int)
+
+    # Now assign RC_IDs based on the ID scheme
+    # For non-split centres: RC_ID = nosplit_RC_ID (or keep original if no match)
+    # For split centres: RC_ID = "{Parent_RC_ID}_{sequence}"
+
+    # Convert RC_ID to string type first to avoid dtype warnings
+    centres_split['RC_ID'] = centres_split['RC_ID'].astype(str)
+
+    # First, for non-split centres, use the nosplit RC_ID
+    non_split_mask = ~centres_split['was_split']
+    centres_split.loc[non_split_mask, 'RC_ID'] = centres_split.loc[non_split_mask, 'nosplit_RC_ID'].fillna(
+        centres_split.loc[non_split_mask, 'original_split_RC_ID']
+    ).astype(int).astype(str)
+
+    # For split centres, assign sequence numbers within each parent group
+    split_mask = centres_split['was_split']
+    if split_mask.any():
+        # Get split centres, sort by Parent_RC_ID and POI count (descending)
+        split_centres = centres_split.loc[split_mask].copy()
+        split_centres = split_centres.sort_values(
+            by=['Parent_RC_ID', poi_col],
+            ascending=[True, False]
+        )
+
+        # Assign sequence numbers within each parent group
+        split_centres['sequence'] = split_centres.groupby('Parent_RC_ID').cumcount() + 1
+
+        # Create the new RC_ID as "{Parent_RC_ID}_{sequence}"
+        split_centres['new_RC_ID'] = (
+            split_centres['Parent_RC_ID'].astype(str) + '_' +
+            split_centres['sequence'].astype(str)
+        )
+
+        # Update the RC_ID for split centres
+        centres_split.loc[split_centres.index, 'RC_ID'] = split_centres['new_RC_ID']
+
+    # Clean up temporary columns
+    centres_split = centres_split.drop(columns=['original_split_RC_ID', 'nosplit_RC_ID'], errors='ignore')
 
     # Print summary
     n_split = centres_split['was_split'].sum()
     print(f"  Centres that were split: {n_split}")
     print(f"  Centres not split: {len(centres_split) - n_split}")
+
+    # Count how many unique parents have multiple children (actual splits)
+    split_centres_only = centres_split[centres_split['was_split']]
+    if len(split_centres_only) > 0:
+        parent_counts = split_centres_only.groupby('Parent_RC_ID').size()
+        n_parents = len(parent_counts)
+        print(f"  Original centres that were split: {n_parents}")
+
+        # Show example of ID scheme
+        example_parent = parent_counts.idxmax()
+        examples = centres_split[centres_split['Parent_RC_ID'] == example_parent][['RC_ID', 'Parent_RC_ID', poi_col]].head(3)
+        print(f"  Example (Parent {example_parent}):")
+        for _, row in examples.iterrows():
+            print(f"    RC_ID: {row['RC_ID']}, Parent_RC_ID: {row['Parent_RC_ID']}, POIs: {row[poi_col]}")
 
     return centres_split
 
@@ -343,6 +419,7 @@ def create_centres_clean(
         'centre_type': 'Is Retail Park',
         'was_split': 'Was Split',
         'Original_POI_count': 'Original POI Count',
+        'Parent_RC_ID': 'Parent RC ID',
     }
 
     # Find which columns exist and build the clean dataframe
