@@ -97,16 +97,26 @@ def add_cells_manually(df: pl.DataFrame) -> pl.DataFrame:
 def flag_manually_removed_cells(df: pl.DataFrame) -> pl.DataFrame:
     # Flattened list of all manually flagged cells
     manually_removed_cells = [
+
+        #Edits from previous 2022 version - 
+    # Not running this for now. Three cases from before seem fine:
+    # - Brighton: exact split by algo
+    # - Norwich: already split normally
+    # - London: Islington/Highbury splits a bit different but reasonable.
+    #   Manual split forces north Hackney not to split (below threshold)
         # Dereham Rd, Norwich
-        "8b194105a56bfff", "8b194105a540fff", "8b194105a192fff", "8b194105a56cfff",
-        "8b194105a568fff", "8b194105a56efff", "8b194105a560fff", "8b194105a56afff",
-        "8b194105a563fff", "8b194105a54cfff", "8b194105a545fff", "8b194105a562fff",
-        "8b194105a541fff", "8b194105a54efff", "8b194105a543fff", "8b194105a542fff",
-        "8b194105a56dfff",
-        # London Rd, Brighton
-        "8b194a7252ecfff", "8b194a7252eefff",
-        # Islington and Highbury in London
-        "8b195da6bb53fff", "8b195da6bb51fff", "8b195da6bb42fff"
+        # "8b194105a56bfff", "8b194105a540fff", "8b194105a192fff", "8b194105a56cfff",
+        # "8b194105a568fff", "8b194105a56efff", "8b194105a560fff", "8b194105a56afff",
+        # "8b194105a563fff", "8b194105a54cfff", "8b194105a545fff", "8b194105a562fff",
+        # "8b194105a541fff", "8b194105a54efff", "8b194105a543fff", "8b194105a542fff",
+        # "8b194105a56dfff",
+        # # London Rd, Brighton
+        # "8b194a7252ecfff", "8b194a7252eefff",
+        # # Islington and Highbury in London
+        # "8b195da6bb53fff", "8b195da6bb51fff", "8b195da6bb42fff"
+        #New Edits 2025
+        #Shepards Bush Tube Station (Seperates Westfield Shopping Centre from surrounding retail
+        "8b194ada47b0fff", "8b194ada47b4fff"
     ]
 
     df = df.with_columns([

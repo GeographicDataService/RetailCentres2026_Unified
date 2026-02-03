@@ -76,13 +76,9 @@ def generate_networks(
 
     # ------------------------------------------------------------------
     # NOTE: filter out any manually removed cells and count them
-    # Not running this for now. Three cases from before seem fine:
-    # - Brighton: exact split by algo
-    # - Norwich: already split normally
-    # - London: Islington/Highbury splits a bit different but reasonable.
-    #   Manual split forces north Hackney not to split (below threshold)
+
     # ------------------------------------------------------------------
-    # input_cells = input_cells.filter(~pl.col("manually_removed"))
+    input_cells = input_cells.filter(~pl.col("manually_removed"))
 
     input_cells.write_parquet(f"{save_folder}/0_input_cells.parquet")
 
