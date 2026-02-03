@@ -81,10 +81,13 @@ C_centroid_join = gpd.sjoin(
     predicate="within"
 )
 
+
 rc_counties = rc_counties.set_index("RC_ID")
 C_centroid_join = C_centroid_join.set_index("RC_ID")
 
-rc_counties["CountyName"].update(C_centroid_join["CountyName"])
+rc_counties["CountyName"] = rc_counties["CountyName"].where(
+    rc_counties["CountyName"].notna(), C_centroid_join["CountyName"]
+)
 
 rc_counties = rc_counties.reset_index()
 
@@ -149,9 +152,6 @@ buildup = gpd.read_file(
 buildup["gsscode"] = buildup["BUA11CD"]
 buildup["name1_text"] = buildup["BUA11NM"]
 buildup["fid"] = buildup["GlobalID"]
-
-# use the Area geometry column as the active geometry
-buildup = buildup.set_geometry("Area")
 
 buildup = buildup.to_crs(retail_centers.crs)
 buildup = buildup[["gsscode", "geometry", "name1_text", "fid"]]
@@ -223,4 +223,5 @@ rc_final = rc_counties_region.merge(
 # manual NI gsscode
 rc_final.loc[rc_final["RegionName"] == "NI", "gsscode"] = "NI"
 
-rc_final.to_csv("output/rc_lookups2.csv", index=False)
+rc_final.to_csv("output/rc_lookups_2011BUA.csv", index=False)
+print("RC lookups with 2011 BUA saved to output/rc_lookups_2011BUA.csv")
