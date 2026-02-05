@@ -1166,6 +1166,90 @@ def filter_foreign_address_pois(
 
 
 # =============================================================================
+# REGISTERED OFFICE POSTCODES FILTER
+# =============================================================================
+
+# Postcodes known to be business registration addresses (virtual offices, company
+# formation agents) rather than physical retail locations. These have high Foursquare
+# POI counts but low/no LDC presence.
+REGISTERED_OFFICE_POSTCODES = {
+    "EC1V2NX",  # Old Street area - company formation services
+    "N17GU",    # King's Cross - virtual office providers
+    "EC2A4NE",  # Shoreditch - registered office services
+    "G24JR",    # Glasgow - business registration address
+}
+
+
+def filter_registered_office_postcodes(
+    foursquare: pl.DataFrame,
+    save_removed: bool = True,
+    output_dir: str = "data/intermediate/registered_offices_removed"
+) -> pl.DataFrame:
+    """
+    Filter POIs at postcodes known to be business registration addresses.
+
+    These postcodes have high Foursquare POI counts but low/no LDC presence because
+    businesses are registered there (virtual offices, company formation agents) rather
+    than having a physical retail presence.
+
+    Parameters:
+    - foursquare: polars.DataFrame with POI data (must have 'postcode' column)
+    - save_removed: Whether to save removed POIs (default: True)
+    - output_dir: Directory to save removed POI files
+
+    Returns:
+    - polars.DataFrame with registered office POIs removed
+    """
+    print("Filtering registered office postcodes...")
+
+    initial_count = len(foursquare)
+
+    postcodes_to_remove = REGISTERED_OFFICE_POSTCODES
+
+    print(f"  Postcodes to filter: {sorted(postcodes_to_remove)}")
+
+    # Normalise postcodes for matching (remove spaces, uppercase)
+    foursquare = foursquare.with_columns(
+        pl.col("postcode")
+        .str.replace_all(r"\s+", "")
+        .str.to_uppercase()
+        .alias("_pc_norm")
+    )
+
+    # Identify POIs to remove
+    to_remove = foursquare.filter(pl.col("_pc_norm").is_in(postcodes_to_remove))
+
+    if len(to_remove) == 0:
+        print("  No registered office POIs detected")
+        return foursquare.drop("_pc_norm")
+
+    print(f"  Registered office POIs detected: {len(to_remove):,}")
+
+    # Show breakdown by postcode
+    breakdown = to_remove.group_by("_pc_norm").agg(pl.count().alias("count")).sort("count", descending=True)
+    for row in breakdown.iter_rows(named=True):
+        print(f"    {row['_pc_norm']}: {row['count']:,}")
+
+    # Save removed POIs
+    if save_removed:
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_path = f"{output_dir}/registered_offices_removed.parquet"
+        to_remove.drop("_pc_norm").write_parquet(output_path)
+        print(f"  Saved removed POIs: {output_path}")
+
+    # Create filtered dataset (keep nulls - only remove matching postcodes)
+    filtered = foursquare.filter(
+        pl.col("_pc_norm").is_null() | ~pl.col("_pc_norm").is_in(postcodes_to_remove)
+    ).drop("_pc_norm")
+
+    print(f"POIs remaining after registered office removal: {len(filtered):,}")
+    print(f"Removed: {initial_count - len(filtered):,} ({100 * (initial_count - len(filtered)) / initial_count:.3f}%)")
+
+    return filtered
+
+
+# =============================================================================
 # ORCHESTRATOR/LOADER FUNCTIONS
 # =============================================================================
 
@@ -1253,6 +1337,8 @@ def filter_foursquare_quality(
     postcode_mismatch_batch_size: int = 100000,
     onspd_dir: str = "data/inputs/onspd",
     save_postcode_mismatch_removed: bool = True,
+    filter_registered_offices: bool = True,
+    save_registered_offices_removed: bool = True,
     save_filter_ids: bool = False,
     filter_ids_path: str = "data/intermediate/poi_filtered/quality_filter_ids.parquet"
 ) -> pl.DataFrame:
@@ -1289,6 +1375,8 @@ def filter_foursquare_quality(
     - postcode_mismatch_batch_size: Number of POIs to process at once (default: 100k, reduce if out of memory)
     - onspd_dir: Path to directory containing ONSPD CSV files
     - save_postcode_mismatch_removed: Whether to save removed postcode mismatches (default: True)
+    - filter_registered_offices: Whether to apply registered office postcode filter (default: True)
+    - save_registered_offices_removed: Whether to save removed registered office POIs (default: True)
     - save_filter_ids: Whether to save POI IDs removed by each filter for reuse (default: False)
     - filter_ids_path: Path to save filter IDs parquet file (default: "data/intermediate/poi_filtered/quality_filter_ids.parquet")
 
@@ -1442,6 +1530,25 @@ def filter_foursquare_quality(
             )
             if len(removed_business_changes) > 0:
                 removed_ids_by_filter["business_changes"] = removed_business_changes
+
+    # Apply registered office postcode filter
+    if filter_registered_offices:
+        print("\n7. Filtering registered office postcodes...")
+        print("-" * 60)
+        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
+        foursquare_filt = filter_registered_office_postcodes(
+            foursquare_filt,
+            save_removed=save_registered_offices_removed,
+            output_dir="data/intermediate/registered_offices_removed"
+        )
+        if save_filter_ids:
+            removed_registered = pre_filter_ids.join(
+                foursquare_filt.select("fsq_place_id"),
+                on="fsq_place_id",
+                how="anti"
+            )
+            if len(removed_registered) > 0:
+                removed_ids_by_filter["registered_offices"] = removed_registered
 
     # Save filter IDs if requested
     if save_filter_ids and removed_ids_by_filter:
