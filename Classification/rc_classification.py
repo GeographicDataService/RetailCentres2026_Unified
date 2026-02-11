@@ -41,11 +41,10 @@ def apply_hierarchical_classification(
     # )
     assign(
         "Major Town Centre",
-        (
-            (df["CTY_rank"] == 1) & (df["RGN_rank"] != 1) & (df["LDC_retailN"] >= 350)
-        )
+        ((df["CTY_rank"] == 1) & (df["RGN_rank"] != 1))
+        | (df["LDC_retailN"] >= 350)
         | (
-            (df["LAD_rank"] == 1) & (df["RGN_rank"] != 1 ) & (df["CTY_rank"] != 1) & (df["LDC_retailN"] >= 350)
+            (df["LAD_rank"] == 1) & (df["RGN_rank"] != 1 ) & (df["CTY_rank"] != 1) & (df["LDC_retailN"] >= 600) # change to 600
         ),
     )
     assign(
@@ -392,7 +391,7 @@ def main() -> None:
     split_parent_col = "Parent_ID"
     split_flag_col = "was_split"
 
-    output_gpkg = "output/rc2025_classified_joined_BUA11_DefUpdated_1.gpkg"
+    output_gpkg = "output/rc2025_classified_10Feb.gpkg"
     crs = "EPSG:27700"
 
     rc_geo = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)
@@ -429,6 +428,48 @@ def main() -> None:
         # no geometry available; write a CSV instead
         output_csv = output_gpkg.replace(".gpkg", ".csv")
         df_out.to_csv(output_csv, index=False)
+
+def run_classification(
+    rc_lookups_csv="output/rc_lookups_2011BUA.csv",
+    rc_ldc_csv="output/retail_centers_with_ldc_retailN.csv",
+    split_path="geo/postworkshopcentres_withsplit.gpkg",
+    split_parent_col="Parent_ID",
+    split_flag_col="was_split",
+    output_gpkg="output/rc2025_classified_10Feb.gpkg",
+    crs="EPSG:27700",
+):
+    rc_geo = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)
+
+    if "tr_retailN" not in rc_geo.columns and "LDC_retailN" in rc_geo.columns:
+        rc_geo["tr_retailN"] = rc_geo["LDC_retailN"]
+
+    if Path(split_path).exists():
+        split_df = gpd.read_file(split_path)
+        df_out = classify_with_grouping(
+            rc_geo=rc_geo,
+            rc_split=split_df,
+            parent_col=split_parent_col,
+            split_col=split_flag_col,
+        )
+    else:
+        df_out = apply_hierarchical_classification(rc_geo)
+        df_out = apply_manual_edits(df_out)
+        df_out = apply_shopping_outlet_overrides(df_out)
+        df_out = apply_out_of_town_sizing(df_out)
+
+    if "geometry" not in df_out.columns and "geometry" in rc_geo.columns:
+        df_out = df_out.merge(rc_geo[["RC_ID", "geometry"]], on="RC_ID", how="left")
+
+    if "geometry" in df_out.columns:
+        df_out["geometry"] = _maybe_parse_wkt(df_out["geometry"])
+        out_gdf = gpd.GeoDataFrame(df_out, geometry="geometry", crs=crs)
+        out_gdf.to_file(output_gpkg, driver="GPKG")
+    else:
+        output_csv = output_gpkg.replace(".gpkg", ".csv")
+        df_out.to_csv(output_csv, index=False)
+
+def main() -> None:
+    run_classification()
 
 
 if __name__ == "__main__":
