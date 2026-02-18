@@ -19,14 +19,20 @@ def apply_hierarchical_classification(
         "BUA_rank": "gsscode",
     }
 
-    for rank_col, group_col in rank_specs.items():
-        if rank_col in df.columns:
-            continue
-        mask = df[group_col].notna()
-        df.loc[mask, rank_col] = df[mask].groupby(group_col)["LDC_retailN"].rank(
-            method="first", ascending=False
-        )
-        df[rank_col] = df[rank_col].fillna(999999)
+    # Ensure rank columns exist
+    for rank_col in rank_specs.keys():
+        if rank_col not in df.columns:
+            df[rank_col] = 999999
+
+    def recompute_ranks(mask: pd.Series) -> None:
+        for rank_col, group_col in rank_specs.items():
+            group_mask = mask & df[group_col].notna()
+            df.loc[group_mask, rank_col] = (
+                df.loc[group_mask]
+                .groupby(group_col)["LDC_retailN"]
+                .rank(method="first", ascending=False)
+            )
+            df.loc[~group_mask, rank_col] = df.loc[~group_mask, rank_col].fillna(999999)
 
     df["tr_retailN"] = df.get("tr_retailN", df["LDC_retailN"])
     df["Classification"] = pd.Series(pd.NA, index=df.index)
@@ -34,19 +40,21 @@ def apply_hierarchical_classification(
     def assign(label: str, mask: pd.Series) -> None:
         df.loc[df["Classification"].isna() & mask, "Classification"] = label
 
+    # Tier 1: Regional Centre (rerank among remaining)
+    recompute_ranks(df["Classification"].isna())
     assign("Regional Centre", (df["RGN_rank"] == 1))
-    # assign(
-    #     "Major Town Centre",
-    #     (df["CTY_rank"] == 1) & (df["RGN_rank"] != 1) & (df["LDC_retailN"] >= 350),
-    # )
+    # Tier 2: Major Town Centre (rerank among remaining)
+    recompute_ranks(df["Classification"].isna())
     assign(
         "Major Town Centre",
         ((df["CTY_rank"] == 1) & (df["RGN_rank"] != 1)) # change this to OR condition
         | (df["LDC_retailN"] >= 500) # change the treshold to 500
         | (
-            (df["LAD_rank"] == 1) & (df["RGN_rank"] != 1 ) & (df["CTY_rank"] != 1) & (df["LDC_retailN"] >= 600) # change to 600
+            (df["LAD_rank"] == 1) & (df["RGN_rank"] != 1 ) & (df["CTY_rank"] != 1) & (df["LDC_retailN"] >= 500) # change to 600
         ),
     )
+    # Tier 3: Town Centre (rerank among remaining)
+    recompute_ranks(df["Classification"].isna())
     assign(
         "Town Centre",
         (
@@ -62,6 +70,8 @@ def apply_hierarchical_classification(
         ),
     )
 
+    # Tier 4: Market Town (rerank among remaining)
+    recompute_ranks(df["Classification"].isna())
     assign(
         "Market Town",
         (df["BUA_rank"] == 1)
@@ -71,6 +81,8 @@ def apply_hierarchical_classification(
         & (df["tr_retailN"] >= 150)
         & (df["tr_retailN"] < 250),
     )
+    # Tier 5: District Centre (rerank among remaining)
+    recompute_ranks(df["Classification"].isna())
     assign(
         "District Centre",
         (df["BUA_rank"] != 1)
@@ -79,6 +91,8 @@ def apply_hierarchical_classification(
         & (df["CTY_rank"] != 1)
         & (df["tr_retailN"] >= 150),
     )
+    # Tier 6: Local Centre (rerank among remaining)
+    recompute_ranks(df["Classification"].isna())
     assign("Local Centre", df["tr_retailN"] < 150)
 
     df.loc[(df["Classification"] == "Local Centre") & (df["tr_retailN"] < 100), "Classification"] = (
