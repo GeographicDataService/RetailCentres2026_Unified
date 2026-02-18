@@ -13,7 +13,8 @@ def build_rc_lookups(
     lad_code_col: str = "LAD24CD",
     county_name_col: str = "Name",
     region_name_col: str = "Name",
-    buildup_code_col: str = "BUA11CD",
+    #buildup_code_col: str = "BUA11CD", 
+    buildup_code_col: str = "fid",# for 2025 dissolved BUA, change to "fid"
     buildup_name_col: str = "BUA11NM",
     buildup_id_col: str = "GlobalID",
 ) -> None:
@@ -115,10 +116,12 @@ def build_rc_lookups(
 
     # ---------- Buildup ----------
     buildup = gpd.read_file(buildup_path).to_crs(retail_centers.crs)
-    buildup["gsscode"] = buildup[buildup_code_col]
-    buildup["name1_text"] = buildup[buildup_name_col]
-    buildup["fid"] = buildup[buildup_id_col]
-    buildup = buildup[["gsscode", "geometry", "name1_text", "fid"]]
+    # 2025 dissolved BUA (fallback to index if no code column)
+    if buildup_code_col in buildup.columns:
+        buildup["gsscode"] = buildup[buildup_code_col]
+    else:
+        buildup["gsscode"] = buildup.index.astype(str)
+    buildup = buildup[["gsscode", "geometry"]]
 
     rc_buildup = gpd.sjoin(retail_centers, buildup, how="left", predicate="within")
 

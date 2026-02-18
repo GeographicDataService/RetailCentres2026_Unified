@@ -333,11 +333,28 @@ def classify_with_grouping(
         rc_geo = rc_geo.copy()
         rc_geo["tr_retailN"] = rc_geo["LDC_retailN"]
 
-    df = rc_geo.merge(
-        rc_split[["RC_ID", split_col, parent_col]],
-        on="RC_ID",
-        how="left"
-    )
+    # If split columns already exist in rc_geo, skip merging rc_split
+    if split_col in rc_geo.columns and parent_col in rc_geo.columns:
+        df = rc_geo.copy()
+    else:
+        df = rc_geo.merge(
+            rc_split[["RC_ID", split_col, parent_col]],
+            on="RC_ID",
+            how="left"
+        )
+
+    # Handle possible suffixes if columns exist in both inputs
+    if split_col not in df.columns:
+        for candidate in (f"{split_col}_x", f"{split_col}_y"):
+            if candidate in df.columns:
+                df = df.rename(columns={candidate: split_col})
+                break
+    if parent_col not in df.columns:
+        for candidate in (f"{parent_col}_x", f"{parent_col}_y"):
+            if candidate in df.columns:
+                df = df.rename(columns={candidate: parent_col})
+                break
+
 
     # if split file brings its own geometry, keep the rc_geo geometry
     if "geometry" not in df.columns and "geometry_x" in df.columns:
@@ -451,9 +468,11 @@ def run_classification(
         df_out["geometry"] = _maybe_parse_wkt(df_out["geometry"])
         out_gdf = gpd.GeoDataFrame(df_out, geometry="geometry", crs=crs)
         out_gdf.to_file(output_gpkg, driver="GPKG")
+        print(f"Classification output saved to {output_gpkg}")
     else:
         output_csv = output_gpkg.replace(".gpkg", ".csv")
         df_out.to_csv(output_csv, index=False)
+    
 
 def main() -> None:
     run_classification()
