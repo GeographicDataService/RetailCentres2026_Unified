@@ -41,8 +41,8 @@ def apply_hierarchical_classification(
     # )
     assign(
         "Major Town Centre",
-        ((df["CTY_rank"] == 1) & (df["RGN_rank"] != 1))
-        | (df["LDC_retailN"] >= 350)
+        ((df["CTY_rank"] == 1) & (df["RGN_rank"] != 1)) # change this to OR condition
+        | (df["LDC_retailN"] >= 500) # change the treshold to 500
         | (
             (df["LAD_rank"] == 1) & (df["RGN_rank"] != 1 ) & (df["CTY_rank"] != 1) & (df["LDC_retailN"] >= 600) # change to 600
         ),
@@ -53,7 +53,7 @@ def apply_hierarchical_classification(
             (df["CTY_rank"] == 1)
             & (df["RGN_rank"] != 1)
             & (df["LDC_retailN"] >= 250)
-            & (df["LDC_retailN"] < 350)
+            & (df["LDC_retailN"] < 500) #change to 500 rather 350
         )
         | (
             (df["LAD_rank"] == 1)
@@ -93,11 +93,11 @@ def apply_hierarchical_classification(
     )
 
     df.loc[retail_park_mask, "Classification"] = "Retail Park"
-    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] < 50), "Classification"] = (
+    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] < 25), "Classification"] = (
         "Small Retail Park"
     )
-    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] >= 50), "Classification"] = (
-        "Large Retail Park"
+    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] >= 25), "Classification"] = (
+        "Large Retail Park" # change this threshold to 25 from 50
     )
 
     return df.sort_values(["RegionName", id_col]).reset_index(drop=True)
