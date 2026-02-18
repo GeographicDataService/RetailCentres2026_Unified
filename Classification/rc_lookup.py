@@ -161,12 +161,12 @@ def build_rc_lookups(
     rc_final.loc[rc_final["RegionName"] == "NI", "gsscode"] = "NI"
 
     rc_final.to_csv(output_csv, index=False)
-    print(f"RC lookups saved to {output_csv}")
+    print(f"RC lookups between 2021paper RC_ID and new RC_IDsaved to {output_csv}")
 
 
 def main() -> None:
     build_rc_lookups(
-        rc_path="geo/postworkshopcentres.gpkg",
+        rc_path="geo/postworkshopcentres.gpkg", 
         lad_path="geo/LA/Local_Authority_Districts_May_2024_Boundaries_UK_BFE_-5758551109064458912/LAD_MAY_2024_UK_BFE.shp",
         counties_path="geo/Counties/uk_27700.shp",
         regions_path="geo/Regions/GB_regions.shp",
