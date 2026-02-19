@@ -8,7 +8,6 @@ def apply_hierarchical_classification(
     df: pd.DataFrame,
     retail_park_rc_ids=None,
     id_col: str = "RC_ID",
-    retailN_col: str = "LDC_retailN",
 ) -> pd.DataFrame:
     df = df.copy()
     retail_park_rc_ids = set() if retail_park_rc_ids is None else set(retail_park_rc_ids)
@@ -20,51 +19,37 @@ def apply_hierarchical_classification(
         "BUA_rank": "gsscode",
     }
 
-    # Ensure rank columns exist
-    for rank_col in rank_specs.keys():
-        if rank_col not in df.columns:
-            df[rank_col] = 999999
+    for rank_col, group_col in rank_specs.items():
+        if rank_col in df.columns:
+            continue
+        mask = df[group_col].notna()
+        df.loc[mask, rank_col] = df[mask].groupby(group_col)["LDC_retailN"].rank(
+            method="first", ascending=False
+        )
+        df[rank_col] = df[rank_col].fillna(999999)
 
-    def recompute_ranks(mask: pd.Series) -> None:
-        for rank_col, group_col in rank_specs.items():
-            group_mask = mask & df[group_col].notna()
-            df.loc[group_mask, rank_col] = (
-                df.loc[group_mask]
-                .groupby(group_col)["tr_retailN"]
-                .rank(method="first", ascending=False)
-            )
-            df.loc[~group_mask, rank_col] = df.loc[~group_mask, rank_col].fillna(999999)
-
-    if retailN_col not in df.columns:
-        raise KeyError(f"retailN_col '{retailN_col}' not found in dataframe")
-    df["tr_retailN"] = df[retailN_col]
+    df["tr_retailN"] = df.get("tr_retailN", df["LDC_retailN"])
     df["Classification"] = pd.Series(pd.NA, index=df.index)
 
     def assign(label: str, mask: pd.Series) -> None:
         df.loc[df["Classification"].isna() & mask, "Classification"] = label
 
-    # Tier 1: Regional Centre (rerank among remaining)
-    recompute_ranks(df["Classification"].isna())
     assign("Regional Centre", (df["RGN_rank"] == 1))
-    # Tier 2: Major Town Centre (rerank among remaining)
-    recompute_ranks(df["Classification"].isna())
     assign(
         "Major Town Centre",
         ((df["CTY_rank"] == 1) & (df["RGN_rank"] != 1)) # change this to OR condition
-        | (df["tr_retailN"] >= 500) # change the treshold to 500
+        | (df["LDC_retailN"] >= 500) # change the treshold to 500
         | (
-            (df["LAD_rank"] == 1) & (df["RGN_rank"] != 1 ) & (df["CTY_rank"] != 1) & (df["tr_retailN"] >= 500) # change to 500
+            (df["LAD_rank"] == 1) & (df["RGN_rank"] != 1 ) & (df["CTY_rank"] != 1) & (df["LDC_retailN"] >= 500) # change to 500
         ),
     )
-    # Tier 3: Town Centre (rerank among remaining)
-    recompute_ranks(df["Classification"].isna())
     assign(
         "Town Centre",
         (
             (df["CTY_rank"] == 1)
             & (df["RGN_rank"] != 1)
-            & (df["tr_retailN"] >= 250)
-            & (df["tr_retailN"] < 500) #change to 500 rather 350
+            & (df["LDC_retailN"] >= 250)
+            & (df["LDC_retailN"] < 500) #change to 500 rather 350
         )
         | (
             (df["LAD_rank"] == 1)
@@ -73,8 +58,6 @@ def apply_hierarchical_classification(
         ),
     )
 
-    # Tier 4: Market Town (rerank among remaining)
-    recompute_ranks(df["Classification"].isna())
     assign(
         "Market Town",
         (df["BUA_rank"] == 1)
@@ -84,8 +67,6 @@ def apply_hierarchical_classification(
         & (df["tr_retailN"] >= 150)
         & (df["tr_retailN"] < 250),
     )
-    # Tier 5: District Centre (rerank among remaining)
-    recompute_ranks(df["Classification"].isna())
     assign(
         "District Centre",
         (df["BUA_rank"] != 1)
@@ -94,15 +75,13 @@ def apply_hierarchical_classification(
         & (df["CTY_rank"] != 1)
         & (df["tr_retailN"] >= 150),
     )
-    # Tier 6: Local Centre (rerank among remaining)
-    recompute_ranks(df["Classification"].isna())
     assign("Local Centre", df["tr_retailN"] < 150)
 
     df.loc[(df["Classification"] == "Local Centre") & (df["tr_retailN"] < 100), "Classification"] = (
         "Small Local Centre"
     )
 
-    df.loc[df["Classification"].isna() & df["tr_retailN"].notna(), "Classification"] = "Market Town"
+    df.loc[df["Classification"].isna() & df["LDC_retailN"].notna(), "Classification"] = "Market Town"
     df["Classification"] = df["Classification"].fillna("Small Local Centre")
 
     retail_park_mask = (df["centre_type"] == "retail_park") & (
@@ -122,7 +101,7 @@ def apply_hierarchical_classification(
 #####-----2. Manual Edits -----#####
 def apply_manual_edits(
     df: pd.DataFrame,
-    rcid_lookup_csv: str = "output/rcid_lookup_old_to_new.csv",
+    rcid_lookup_csv: str = "output/old_rc/rcid_lookup_old_to_new.csv",
     manual_hierarchy_csv: str | None = None,
     group_col: str = "group_id",
 ) -> pd.DataFrame:
@@ -199,7 +178,7 @@ def apply_manual_edits(
 def apply_shopping_outlet_overrides(
     df: pd.DataFrame,
     rc_uk_path: str = "geo/postworkshopcentres.gpkg",
-    rcid_lookup_csv: str = "output/rcid_lookup_old_to_new.csv",
+    rcid_lookup_csv: str = "output/old_rc/rcid_lookup_old_to_new.csv",
 ) -> pd.DataFrame:
     """
     Manual outlet locations (spatial intersection + explicit ID overrides).
@@ -324,37 +303,12 @@ def classify_with_grouping(
     rc_split: pd.DataFrame,
     parent_col: str = "Parent_ID",
     split_col: str = "was_split",
-    retailN_col: str = "LDC_retailN",
 ) -> pd.DataFrame:
-    if "tr_retailN" not in rc_geo.columns and retailN_col in rc_geo.columns:
-        rc_geo = rc_geo.copy()
-        rc_geo["tr_retailN"] = rc_geo[retailN_col]
-    elif "tr_retailN" not in rc_geo.columns and "LDC_retailN" in rc_geo.columns:
-        rc_geo = rc_geo.copy()
-        rc_geo["tr_retailN"] = rc_geo["LDC_retailN"]
-
-    # If split columns already exist in rc_geo, skip merging rc_split
-    if split_col in rc_geo.columns and parent_col in rc_geo.columns:
-        df = rc_geo.copy()
-    else:
-        df = rc_geo.merge(
-            rc_split[["RC_ID", split_col, parent_col]],
-            on="RC_ID",
-            how="left"
-        )
-
-    # Handle possible suffixes if columns exist in both inputs
-    if split_col not in df.columns:
-        for candidate in (f"{split_col}_x", f"{split_col}_y"):
-            if candidate in df.columns:
-                df = df.rename(columns={candidate: split_col})
-                break
-    if parent_col not in df.columns:
-        for candidate in (f"{parent_col}_x", f"{parent_col}_y"):
-            if candidate in df.columns:
-                df = df.rename(columns={candidate: parent_col})
-                break
-
+    df = rc_geo.merge(
+        rc_split[["RC_ID", split_col, parent_col]],
+        on="RC_ID",
+        how="left"
+    )
 
     # if split file brings its own geometry, keep the rc_geo geometry
     if "geometry" not in df.columns and "geometry_x" in df.columns:
@@ -370,7 +324,7 @@ def classify_with_grouping(
     group_df = (
         df.groupby("group_id", dropna=False)
           .agg(
-              tr_retailN=("tr_retailN", "sum"),
+              LDC_retailN=("tr_retailN", "sum"),
               RegionName=("RegionName", "first"),
               CountyName=("CountyName", "first"),
               LAD24NM=("LAD24NM", "first"),
@@ -381,18 +335,33 @@ def classify_with_grouping(
     )
 
     # 3) classify at GROUP level
-    group_df = apply_hierarchical_classification(
-        group_df,
-        id_col="group_id",
-        retailN_col="tr_retailN",
+    group_df = apply_hierarchical_classification(group_df, id_col="group_id")
+    group_df.rename(
+        columns={
+            "LDC_retailN": "group_LDC_retailN",
+            "RGN_rank": "group_RGN_rank",
+            "CTY_rank": "group_CTY_rank",
+            "LAD_rank": "group_LAD_rank",
+            "BUA_rank": "group_BUA_rank",
+        },
+        inplace=True,
     )
-    group_df.rename(columns={"tr_retailN": "group_retailN"}, inplace=True)
 
     # 4) merge group results back
     df = df.merge(
-        group_df[["group_id", "group_retailN", "Classification"]],
+        group_df[
+            [
+                "group_id",
+                "group_LDC_retailN",
+                "group_RGN_rank",
+                "group_CTY_rank",
+                "group_LAD_rank",
+                "group_BUA_rank",
+                "Classification",
+            ]
+        ],
         on="group_id",
-        how="left"
+        how="left",
     )
 
     # 5) apply overrides on row level
@@ -429,22 +398,20 @@ def _load_rc_geo(lookups_csv: str, ldc_csv: str, crs: str) -> gpd.GeoDataFrame:
     return rc
 
 
+#####----- Main Execution -----#####
 def run_classification(
-    rc_lookups_csv="output/rc_lookups_2011BUA.csv",
-    rc_ldc_csv="output/retail_centers_with_ldc_retailN.csv",
+    rc_lookups_csv="output/old_rc/rc_lookups_2011BUA.csv",
+    rc_ldc_csv="output/old_rc/retail_centers_with_ldc_retailN.csv",
     split_path="geo/postworkshopcentres_withsplit.gpkg",
     split_parent_col="Parent_ID",
     split_flag_col="was_split",
-    output_gpkg= None,
+    output_gpkg="output/rc2025_classified_19Feb500_nonrerank.gpkg",
     crs="EPSG:27700",
-    retailN_col="LDC_retailN",
 ):
     rc_geo = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)
 
-    if "tr_retailN" not in rc_geo.columns:
-        if retailN_col not in rc_geo.columns:
-            raise KeyError(f"retailN_col '{retailN_col}' not found in dataframe")
-        rc_geo["tr_retailN"] = rc_geo[retailN_col]
+    if "tr_retailN" not in rc_geo.columns and "LDC_retailN" in rc_geo.columns:
+        rc_geo["tr_retailN"] = rc_geo["LDC_retailN"]
 
     if Path(split_path).exists():
         split_df = gpd.read_file(split_path)
@@ -453,10 +420,9 @@ def run_classification(
             rc_split=split_df,
             parent_col=split_parent_col,
             split_col=split_flag_col,
-            retailN_col=retailN_col,
         )
     else:
-        df_out = apply_hierarchical_classification(rc_geo, retailN_col=retailN_col)
+        df_out = apply_hierarchical_classification(rc_geo)
         df_out = apply_manual_edits(df_out)
         df_out = apply_shopping_outlet_overrides(df_out)
         df_out = apply_out_of_town_sizing(df_out)
@@ -468,11 +434,9 @@ def run_classification(
         df_out["geometry"] = _maybe_parse_wkt(df_out["geometry"])
         out_gdf = gpd.GeoDataFrame(df_out, geometry="geometry", crs=crs)
         out_gdf.to_file(output_gpkg, driver="GPKG")
-        print(f"Classification output saved to {output_gpkg}")
     else:
         output_csv = output_gpkg.replace(".gpkg", ".csv")
         df_out.to_csv(output_csv, index=False)
-    
 
 def main() -> None:
     run_classification()
