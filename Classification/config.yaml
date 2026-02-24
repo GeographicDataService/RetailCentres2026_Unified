@@ -36,7 +36,7 @@ rc_classification:
   # Counts from rc_ldcN
   rc_ldc_csv: output/retail_centers_with_ldc_retailN.csv
   # Split information
-  split_path: geo/new_postworkshopcentres05Feb26.gpkg
+  split_path: geo/new_postworkshopcentres05Feb26.gpkg 
   split_parent_col: Parent_ID
   split_flag_col: was_split
   # Output classification
@@ -49,6 +49,8 @@ rc_classification:
   rcid_lookup_csv: output/rcid_lookup_old_to_new.csv
   # Retail centre boundaries used for outlet spatial override
   rc_uk_path: geo/new_postworkshopcentres05Feb26.gpkg
+  # Optional CSV with columns including RC_ID and H_Classification
+  manual_hierarchy_csv: null
 
 
 # # old RC classification notebook (for reference, not used in pipeline)  
