@@ -495,9 +495,12 @@ def run_classification(
         df_out["geometry"] = _maybe_parse_wkt(df_out["geometry"])
         out_gdf = gpd.GeoDataFrame(df_out, geometry="geometry", crs=crs)
         out_gdf.to_file(output_gpkg, driver="GPKG")
+        print(f"---4. Saved classification to {output_gpkg}")
     else:
         output_csv = output_gpkg.replace(".gpkg", ".csv")
         df_out.to_csv(output_csv, index=False)
+        print(f"---4. Saved classification to {output_csv}")
+
 
 def main() -> None:
     raise SystemExit("Use 0_run_all.py with config.yaml to run classification.")

@@ -50,10 +50,9 @@ def main() -> None:
     cfg = load_config()
 
     build_rcid_lookup(**cfg["rc_id_lookup"])
+    print("---1. RC_ID lookup between old and new RC_ID built.")
     build_rc_lookups(**cfg["rc_lookup"])
     build_ldc_retail_counts(**cfg["rc_ldcN"])
     run_classification(**cfg["rc_classification"])
-
-
 if __name__ == "__main__":
     main()

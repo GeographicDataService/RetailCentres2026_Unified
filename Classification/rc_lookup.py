@@ -1,5 +1,6 @@
 import geopandas as gpd
 import pandas as pd
+import warnings
 
 
 def build_rc_lookups(
@@ -115,7 +116,13 @@ def build_rc_lookups(
     rc_regions.loc[mask_ni, "RegionName"] = "NI"
 
     # ---------- Buildup ----------
-    buildup = gpd.read_file(buildup_path).to_crs(retail_centers.crs)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"This version of GeoPackage user_version=.*may only be partially supported",
+            category=RuntimeWarning,
+        )
+        buildup = gpd.read_file(buildup_path).to_crs(retail_centers.crs)
     # 2025 dissolved BUA (fallback to index if no code column)
     if buildup_code_col in buildup.columns:
         buildup["gsscode"] = buildup[buildup_code_col]
@@ -164,7 +171,7 @@ def build_rc_lookups(
     rc_final.loc[rc_final["RegionName"] == "NI", "gsscode"] = "NI"
 
     rc_final.to_csv(output_csv, index=False)
-    print(f"RC lookups between 2021paper RC_ID and new RC_IDsaved to {output_csv}")
+    print(f"---2. RC geo lookups for all level saved to {output_csv}")
 
 
 def main() -> None:
