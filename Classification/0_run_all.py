@@ -53,6 +53,9 @@ def main() -> None:
     print("---1. RC_ID lookup between old and new RC_ID built.")
     build_rc_lookups(**cfg["rc_lookup"])
     build_ldc_retail_counts(**cfg["rc_ldcN"])
-    run_classification(**cfg["rc_classification"])
+    rc_class_cfg = cfg["rc_classification"].copy()
+    rc_class_cfg.setdefault("london_split_override_enabled", True)
+    rc_class_cfg.setdefault("london_region_name", "London")
+    run_classification(**rc_class_cfg)
 if __name__ == "__main__":
     main()

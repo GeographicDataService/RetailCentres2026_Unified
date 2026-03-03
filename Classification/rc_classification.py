@@ -169,6 +169,8 @@ def apply_manual_edits(
     # --- Manual classification edits (NEW RC_IDs) ---
     manual_classification_new = {
         "28": "Regional Centre", # glasgow
+        "5830": "Small Local Centre", # the one in the city of london at the barbican
+        "3379": "Small Retail Park", # the gemini retail park
     }
 
     for rcid, cls in manual_classification_new.items():
@@ -250,8 +252,7 @@ def apply_shopping_outlet_overrides(
             ("Large Outlet Shopping Centre", "Gretna Gateway Outlet Village", 54.99688074646182, -3.056523264134829),
             ("Large Outlet Shopping Centre", "Livingston Designer Outlet", 55.88310933797727, -3.520137944032474),
             ("Large Outlet Shopping Centre", "Sterling Mills Outlet", 56.14927287877639, -3.740053433726151),
-            ("Large Outlet Shopping Centre", "Salford Shopping Centre", 53.48880, -2.28913),  # Salford
-            ("Large Outlet Shopping Centre", "Gemini Shopping Centre", 53.41635131100189, -2.6310959530547873),  # Gemini shopping centre        
+            ("Large Outlet Shopping Centre", "Salford Shopping Centre", 53.48880, -2.28913),  # Salford      
         ],
         columns=["SubType", "Name", "Lat", "Lon"],
     )
@@ -321,6 +322,62 @@ def apply_anchor_overrides(
     return df
 
 
+def apply_london_split_override(
+    df: pd.DataFrame,
+    *,
+    region_name: str = "London",
+    region_col: str = "RegionName",
+    id_col: str = "RC_ID",
+    retailN_col: str = "tr_retailN",
+) -> pd.DataFrame:
+    """
+    Reclassify London rows using split-level POI counts (row-level tr_retailN)
+    instead of grouped totals, while preserving existing Regional Centre labels.
+    """
+    df = df.copy()
+    required = {region_col, id_col, retailN_col, "Classification"}
+    if not required.issubset(df.columns):
+        return df
+
+    london_mask = df[region_col].eq(region_name)
+    if not london_mask.any():
+        return df
+
+    london_recalc = apply_hierarchical_classification(
+        df.loc[london_mask].copy(),
+        id_col=id_col,
+        retailN_col=retailN_col,
+    )
+    recalc_map = london_recalc.set_index(id_col)["Classification"]
+
+    hierarchy_classes = {
+        "Regional Centre",
+        "Major Town Centre",
+        "Town Centre",
+        "Market Town",
+        "District Centre",
+        "Local Centre",
+        "Small Local Centre",
+    }
+    overwrite_mask = (
+        london_mask
+        & df["Classification"].isin(hierarchy_classes)
+        & df["Classification"].ne("Regional Centre")
+    )
+
+    proposed = df.loc[overwrite_mask, id_col].map(recalc_map)
+    proposed = proposed.where(
+        proposed.ne("Regional Centre"),
+        df.loc[overwrite_mask, "Classification"],
+    )
+    changed = int((proposed.fillna(df.loc[overwrite_mask, "Classification"]) != df.loc[overwrite_mask, "Classification"]).sum())
+    df.loc[overwrite_mask, "Classification"] = proposed.fillna(df.loc[overwrite_mask, "Classification"])
+    print(
+        f"---3a. London split override applied: updated {changed} classifications."
+    )
+    return df
+
+
 #####-----4. Classification with Grouping -----#####
 def classify_with_grouping(
     rc_geo: pd.DataFrame,
@@ -332,6 +389,8 @@ def classify_with_grouping(
     rcid_lookup_csv: str,
     rc_uk_path: str,
     manual_hierarchy_csv: str | None = None,
+    london_split_override_enabled: bool = True,
+    london_region_name: str = "London",
 ) -> pd.DataFrame:
     if "tr_retailN" not in rc_geo.columns and retailN_col in rc_geo.columns:
         rc_geo = rc_geo.copy()
@@ -427,6 +486,14 @@ def classify_with_grouping(
         rc_uk_path=rc_uk_path,
         rcid_lookup_csv=rcid_lookup_csv,
     )
+    if london_split_override_enabled:
+        df = apply_london_split_override(
+            df,
+            region_name=london_region_name,
+            region_col="RegionName",
+            id_col="RC_ID",
+            retailN_col="tr_retailN",
+        )
 
     return df
 
@@ -472,6 +539,8 @@ def run_classification(
     rc_uk_path: str,
     manual_hierarchy_csv: str | None = None,
     anchor_district_to_town_threshold: int,
+    london_split_override_enabled: bool = True,
+    london_region_name: str = "London",
 ):
     rc_geo = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)
 
@@ -491,6 +560,8 @@ def run_classification(
             rcid_lookup_csv=rcid_lookup_csv,
             rc_uk_path=rc_uk_path,
             manual_hierarchy_csv=manual_hierarchy_csv,
+            london_split_override_enabled=london_split_override_enabled,
+            london_region_name=london_region_name,
         )
         df_out = apply_anchor_overrides(
             df_out,
