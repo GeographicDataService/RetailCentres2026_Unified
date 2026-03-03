@@ -180,7 +180,7 @@ def apply_manual_edits(
 
     return df
 
-#####-----3. Shopping Outlet Overrides -----#####
+#####-----3. Shopping Outlet and Anchor Store Counts Overrides -----#####
 def apply_shopping_outlet_overrides(
     df: pd.DataFrame,
     rc_uk_path: str,
@@ -250,6 +250,8 @@ def apply_shopping_outlet_overrides(
             ("Large Outlet Shopping Centre", "Gretna Gateway Outlet Village", 54.99688074646182, -3.056523264134829),
             ("Large Outlet Shopping Centre", "Livingston Designer Outlet", 55.88310933797727, -3.520137944032474),
             ("Large Outlet Shopping Centre", "Sterling Mills Outlet", 56.14927287877639, -3.740053433726151),
+            ("Large Outlet Shopping Centre", "Salford Shopping Centre", 53.48880, -2.28913),  # Salford
+            ("Large Outlet Shopping Centre", "Gemini Shopping Centre", 53.41635131100189, -2.6310959530547873),  # Gemini shopping centre        
         ],
         columns=["SubType", "Name", "Lat", "Lon"],
     )
@@ -288,18 +290,34 @@ def apply_shopping_outlet_overrides(
     outlets_tag = outlets_tag.drop_duplicates(subset=["RC_ID"])
 
     df.loc[df["RC_ID"].isin(outlets_tag["RC_ID"]), "Classification"] = "Out of Town Shopping Centres"
+    out_of_town_mask = df["Classification"].isin(["Out of Town Shopping Centres"])
+    df.loc[out_of_town_mask & (df["tr_retailN"] < 50), "Classification"] = "Small Shopping Centre"
+    df.loc[out_of_town_mask & (df["tr_retailN"] >= 50), "Classification"] = "Large Shopping Centre"
 
     return df
 
 
-def apply_out_of_town_sizing(df: pd.DataFrame) -> pd.DataFrame:
+def apply_anchor_overrides(
+    df: pd.DataFrame,
+    district_to_town_threshold: int,
+    anchor_col: str = "anchor_counts",
+) -> pd.DataFrame:
     df = df.copy()
+    if anchor_col not in df.columns:
+        print(
+            f"---3b. Anchor override skipped: column '{anchor_col}' not found."
+        )
+        return df
 
-    out_of_town_mask = df["Classification"].isin(["Out of Town Shopping Centres"])
-
-    df.loc[out_of_town_mask & (df["tr_retailN"] < 50), "Classification"] = "Small Shopping Centre"
-    df.loc[out_of_town_mask & (df["tr_retailN"] >= 50), "Classification"] = "Large Shopping Centre"
-
+    mask = (df["Classification"] == "District Centre") & (
+        pd.to_numeric(df[anchor_col], errors="coerce").fillna(0) >= district_to_town_threshold
+    )
+    promoted = int(mask.sum())
+    df.loc[mask, "Classification"] = "Town Centre"
+    print(
+        f"---3b. Anchor override applied with threshold={district_to_town_threshold}: "
+        f"promoted {promoted} District Centre -> Town Centre."
+    )
     return df
 
 
@@ -409,7 +427,6 @@ def classify_with_grouping(
         rc_uk_path=rc_uk_path,
         rcid_lookup_csv=rcid_lookup_csv,
     )
-    df = apply_out_of_town_sizing(df)
 
     return df
 
@@ -454,6 +471,7 @@ def run_classification(
     rcid_lookup_csv: str,
     rc_uk_path: str,
     manual_hierarchy_csv: str | None = None,
+    anchor_district_to_town_threshold: int,
 ):
     rc_geo = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)
 
@@ -474,6 +492,11 @@ def run_classification(
             rc_uk_path=rc_uk_path,
             manual_hierarchy_csv=manual_hierarchy_csv,
         )
+        df_out = apply_anchor_overrides(
+            df_out,
+            anchor_col="anchor_counts",
+            district_to_town_threshold=anchor_district_to_town_threshold,
+        )
     else:
         df_out = apply_hierarchical_classification(rc_geo, retailN_col=retailN_col)
         df_out = apply_manual_edits(
@@ -486,7 +509,11 @@ def run_classification(
             rc_uk_path=rc_uk_path,
             rcid_lookup_csv=rcid_lookup_csv,
         )
-        df_out = apply_out_of_town_sizing(df_out)
+        df_out = apply_anchor_overrides(
+            df_out,
+            anchor_col="anchor_counts",
+            district_to_town_threshold=anchor_district_to_town_threshold,
+        )
 
     if "geometry" not in df_out.columns and "geometry" in rc_geo.columns:
         df_out = df_out.merge(rc_geo[["RC_ID", "geometry"]], on="RC_ID", how="left")
