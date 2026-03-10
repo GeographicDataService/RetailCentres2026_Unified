@@ -90,9 +90,8 @@ def apply_hierarchical_classification(
     df.loc[df["Classification"].isna() & df["tr_retailN"].notna(), "Classification"] = "Market Town"
     df["Classification"] = df["Classification"].fillna("Small Local Centre")
 
-    retail_park_mask = (df["centre_type"] == "retail_park") & (
-        df["Classification"].isin(["Small Local Centre"])
-    )
+    # Final override: any retail park should end as a retail-park class.
+    retail_park_mask = df["centre_type"].astype(str).str.lower().eq("retail_park")
 
     df.loc[retail_park_mask, "Classification"] = "Retail Park"
     df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] < 25), "Classification"] = (
@@ -435,7 +434,7 @@ def classify_with_grouping(
     group_df = (
         df.groupby("group_id", dropna=False)
           .agg(
-              LDC_retailN=("tr_retailN", "sum"),
+              group_tri_retailN=("tr_retailN", "sum"),
               RegionName=("RegionName", "first"),
               CountyName=("CountyName", "first"),
               LAD24NM=("LAD24NM", "first"),
@@ -446,10 +445,13 @@ def classify_with_grouping(
     )
 
     # 3) classify at GROUP level
-    group_df = apply_hierarchical_classification(group_df, id_col="group_id")
+    group_df = apply_hierarchical_classification(
+        group_df,
+        id_col="group_id",
+        retailN_col="group_tri_retailN",
+    )
     group_df.rename(
         columns={
-            "LDC_retailN": "group_LDC_retailN",
             "RGN_rank": "group_RGN_rank",
             "CTY_rank": "group_CTY_rank",
             "LAD_rank": "group_LAD_rank",
@@ -457,13 +459,12 @@ def classify_with_grouping(
         },
         inplace=True,
     )
-
     # 4) merge group results back
     df = df.merge(
         group_df[
             [
                 "group_id",
-                "group_LDC_retailN",
+                "group_tri_retailN",
                 "group_RGN_rank",
                 "group_CTY_rank",
                 "group_LAD_rank",
