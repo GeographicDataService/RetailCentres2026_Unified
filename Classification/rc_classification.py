@@ -59,16 +59,13 @@ def apply_hierarchical_classification(
         (df["BUA_rank"] == 1)
         & (df["LAD_rank"] != 1)
         & (df["RGN_rank"] != 1)
-        & (df["CTY_rank"] != 1)
-        & (df["tr_retailN"] >= 150)
-        & (df["tr_retailN"] < 250),
+        & (df["tr_retailN"] >= 150),
     )
     assign(
         "District Centre",
         (df["BUA_rank"] != 1)
         & (df["LAD_rank"] != 1)
         & (df["RGN_rank"] != 1)
-        & (df["CTY_rank"] != 1)
         & (df["tr_retailN"] >= 150),
     )
     assign("Local Centre", df["tr_retailN"] < 150)
@@ -76,8 +73,8 @@ def apply_hierarchical_classification(
     df.loc[(df["Classification"] == "Local Centre") & (df["tr_retailN"] < 100), "Classification"] = (
         "Small Local Centre"
     )
-
-    df.loc[df["Classification"].isna() & df["tr_retailN"].notna(), "Classification"] = "Market Town"
+    unclassified_mask = df["Classification"].isna() & df["tr_retailN"].notna()
+    print(f"Unclassified rows before fallback -> Market Town: {int(unclassified_mask.sum())}")
     df["Classification"] = df["Classification"].fillna("Small Local Centre")
 
     # Final override: any retail park should end as a retail-park class.
