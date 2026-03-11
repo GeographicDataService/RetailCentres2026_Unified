@@ -43,25 +43,15 @@ def apply_hierarchical_classification(
     assign("Regional Centre", (df["RGN_rank"] == 1))
     assign(
         "Major Town Centre",
-        ((df["CTY_rank"] == 1) & (df["RGN_rank"] != 1)) # change this to OR condition
-        | (df["tr_retailN"] >= 500) # change the treshold to 500
-        | (
-            (df["LAD_rank"] == 1) & (df["RGN_rank"] != 1 ) & (df["CTY_rank"] != 1) & (df["tr_retailN"] >= 500) # change to 500
-        ),
+        #(df["LAD_rank"] == 1)
+        (df["RGN_rank"] != 1)
+        & (df["tr_retailN"] >= 500),
     )
     assign(
         "Town Centre",
-        (
-            (df["CTY_rank"] == 1)
-            & (df["RGN_rank"] != 1)
-            & (df["tr_retailN"] >= 250)
-            & (df["tr_retailN"] < 500) #change to 500 rather 350
-        )
-        | (
-            (df["LAD_rank"] == 1)
-            & (df["CTY_rank"] != 1)
-            & (df["RGN_rank"] != 1)
-        ),
+        (df["LAD_rank"] == 1)
+        & (df["RGN_rank"] != 1)
+        & (df["tr_retailN"] < 500),
     )
 
     assign(
