@@ -43,8 +43,8 @@ def apply_hierarchical_classification(
     assign("Regional Centre", (df["RGN_rank"] == 1))
     assign(
         "Major Town Centre",
-        #(df["LAD_rank"] == 1)
-        (df["RGN_rank"] != 1)
+        (df["LAD_rank"] == 1)
+        & (df["RGN_rank"] != 1)
         & (df["tr_retailN"] >= 500),
     )
     assign(
