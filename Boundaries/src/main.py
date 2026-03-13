@@ -72,6 +72,14 @@ else:
         filter_ids_path=str(config.FILTER_IDS_PATH)
     )
 
+# Create run directory and save quality-filtered data as geoparquet
+run_dir = config.RUNS_DIR / run_name
+run_dir.mkdir(parents=True, exist_ok=True)
+quality_filtered_gdf = ut.poi_to_geoframe(foursquare)
+quality_filtered_gdf.to_parquet(run_dir / "foursquare_quality_filtered.parquet")
+print(f"Saved quality-filtered geoparquet: {len(quality_filtered_gdf):,} POIs to {run_dir / 'foursquare_quality_filtered.parquet'}")
+del quality_filtered_gdf
+
 # Apply category filters
 foursquare = retailfilter.filter_foursquare(foursquare)
 (
@@ -82,11 +90,24 @@ foursquare = retailfilter.filter_foursquare(foursquare)
     .write_csv("data/intermediate/unique_categories.csv")
 )
 
-# Create run directory and save filtered foursquare data as geoparquet
-run_dir = config.RUNS_DIR / run_name
-run_dir.mkdir(parents=True, exist_ok=True)
+# Add custom taxonomy (high-level category grouping)
+CATEGORY_MAP = {
+    "Retail": "Retail",
+    "Business and Professional Services": "Retail",
+    "Dining and Drinking": "Dining and Drinking",
+    "Sports and Recreation": "Leisure & Travel",
+    "Arts and Entertainment": "Leisure & Travel",
+    "Travel and Transportation": "Leisure & Travel",
+    "Community and Government": "Community & Health",
+    "Health and Medicine": "Community & Health",
+}
+foursquare = foursquare.with_columns(
+    pl.col("level1_category_name").replace(CATEGORY_MAP).alias("retail_type")
+)
+
+# Save retail-filtered foursquare data as geoparquet
 print(f"Saving filtered POIs as geoparquet to {run_dir / 'foursquare_filtered.parquet'}...")
-foursquare_gdf = ut.poi_to_geoframe(foursquare)  # Convert lat/lng to Point geometries
+foursquare_gdf = ut.poi_to_geoframe(foursquare)
 foursquare_gdf.to_parquet(run_dir / "foursquare_filtered.parquet")
 print(f"  ✓ Saved {len(foursquare_gdf):,} filtered POIs with Point geometries\n")
 
