@@ -39,18 +39,30 @@ rc_classification:
   split_path: geo/new_postworkshopcentres05Feb26.gpkg 
   split_parent_col: Parent_ID
   split_flag_col: was_split
-  # Output classification
-  output_gpkg: output/rc2025_classified_2025BUA.gpkg
+  # Output file # change the output route
+  output_gpkg: output/rc2025_foursquare_LondonMannual.gpkg
   # CRS of output
   crs: EPSG:27700
   # Column used for tr_retailN
-  retailN_col: LDC_retailN
+  retailN_col: Total_POI_count # foursqure
+ # retailN_col: LDC_retailN # LDC
   # Old-to-new RC_ID mapping used by manual edits and outlet overrides
   rcid_lookup_csv: output/rcid_lookup_old_to_new.csv
   # Retail centre boundaries used for outlet spatial override
   rc_uk_path: geo/new_postworkshopcentres05Feb26.gpkg
   # Optional CSV with columns including RC_ID and H_Classification
   manual_hierarchy_csv: null
+  # Anchor override: promote District Centre -> Town Centre if anchor_counts >= threshold
+  anchor_district_to_town_threshold: 3
+  # London exception: classify London rows from split-level tr_retailN (not grouped sum)
+  london_split_override_enabled: true
+  # Region name used by the split-level override
+  london_region_name: London
+  # Optional London town centre boundaries used for name-based metropolitan override
+  london_town_centres_path: geo/lodnon_town_centre/London_Town_Centres_Boundaries.gpkg
+  london_town_centres_layer: null
+  london_town_centres_sitename_col: sitename
+  london_town_centres_min_overlap_ratio: 0.05
 
 
 # # old RC classification notebook (for reference, not used in pipeline)  

@@ -1,7 +1,36 @@
 import pandas as pd
 import geopandas as gpd
 from pathlib import Path
+import re
 from shapely import wkt
+
+LONDON_METROPOLITAN_NAMES = {
+    "bromley",
+    "croydon",
+    "ealing",
+    "shepherds bush",
+    "wood green",
+    "harrow",
+    "romford",
+    "uxbridge",
+    "hounslow",
+    "kingston",
+    "stratford",
+    "ilford",
+    "sutton",
+    "canary wharf",
+    "wembley",
+    "woolwich",
+    "lewisham",
+}
+
+LONDON_METROPOLITAN_MANUAL_RC_IDS = {"898"}
+
+LONDON_TOWN_CENTRE_ALIASES = {
+    "shepherd s bush": "shepherds bush town centre",
+    "kingston upon thames": "kingston",
+    "canary wharf and docklands": "canary wharf",
+}
 
 #####-----1. Hierarchical Classification Functions -----#####
 def apply_hierarchical_classification(
@@ -73,8 +102,7 @@ def apply_hierarchical_classification(
     df.loc[(df["Classification"] == "Local Centre") & (df["tr_retailN"] < 100), "Classification"] = (
         "Small Local Centre"
     )
-    unclassified_mask = df["Classification"].isna() & df["tr_retailN"].notna()
-    print(f"Unclassified rows before fallback -> Market Town: {int(unclassified_mask.sum())}")
+
     df["Classification"] = df["Classification"].fillna("Small Local Centre")
 
     # Final override: any retail park should end as a retail-park class.
@@ -364,6 +392,142 @@ def apply_london_split_override(
     return df
 
 
+def _normalise_centre_name(value: str) -> str:
+    if pd.isna(value):
+        return ""
+    value = str(value).strip().lower()
+    value = value.replace("&", "and")
+    value = re.sub(r"[^\w\s]", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return LONDON_TOWN_CENTRE_ALIASES.get(value, value)
+
+
+def apply_london_metropolitan_manual_override(
+    df: gpd.GeoDataFrame,
+    *,
+    london_town_centres_path: str | None = None,
+    london_town_centres_layer: str | None = None,
+    region_name: str = "London",
+    region_col: str = "RegionName",
+    class_col: str = "Classification",
+    sitename_col: str = "sitename",
+    min_overlap_ratio: float = 0.05,
+) -> gpd.GeoDataFrame:
+    """
+    Match London retail-centre polygons to the London town-centre boundary file
+    and use matched sitenames for manual London upgrades/downgrades.
+
+    Only matched non-metropolitan centres are downgraded from Major Town Centre
+    to Town Centre. Unmatched London centres are left unchanged.
+    """
+    df = df.copy()
+
+    if (
+        london_town_centres_path is None
+        or region_col not in df.columns
+        or class_col not in df.columns
+        or "geometry" not in df.columns
+    ):
+        return df
+
+    london_mask = df[region_col].eq(region_name)
+    if not london_mask.any():
+        return df
+
+    london_df = df.loc[london_mask].copy()
+    london_df = london_df.loc[london_df.geometry.notna()].copy()
+    if london_df.empty:
+        return df
+
+    tc_path = Path(london_town_centres_path)
+    if not tc_path.exists():
+        print(f"---3c. London metropolitan manual override skipped: {tc_path} not found.")
+        return df
+
+    tc_gdf = gpd.read_file(tc_path, layer=london_town_centres_layer)
+    if sitename_col not in tc_gdf.columns:
+        print(
+            f"---3c. London metropolitan manual override skipped: "
+            f"column '{sitename_col}' not found in {tc_path}."
+        )
+        return df
+
+    tc_gdf = tc_gdf.loc[tc_gdf.geometry.notna()].copy()
+    tc_gdf = tc_gdf.to_crs(london_df.crs)
+    tc_gdf["matched_name"] = tc_gdf[sitename_col].map(_normalise_centre_name)
+    tc_gdf = tc_gdf.loc[tc_gdf["matched_name"] != ""].copy()
+    if tc_gdf.empty:
+        print("---3c. London metropolitan manual override skipped: no valid sitename geometries.")
+        return df
+
+    tc_gdf["tc_area"] = tc_gdf.geometry.area
+    london_df["rc_area"] = london_df.geometry.area
+
+    overlaps = gpd.overlay(
+        london_df[["RC_ID", "rc_area", "geometry"]],
+        tc_gdf[[sitename_col, "matched_name", "tc_area", "geometry"]],
+        how="intersection",
+    )
+    if overlaps.empty:
+        print("---3c. London metropolitan manual override skipped: no overlaps found.")
+        return df
+
+    overlaps["overlap_area"] = overlaps.geometry.area
+    overlaps["tc_overlap_ratio"] = overlaps["overlap_area"] / overlaps["tc_area"]
+    overlaps["rc_overlap_ratio"] = overlaps["overlap_area"] / overlaps["rc_area"]
+    overlaps = overlaps.loc[
+        (overlaps["tc_overlap_ratio"] >= min_overlap_ratio)
+        | (overlaps["rc_overlap_ratio"] >= min_overlap_ratio)
+    ].copy()
+    if overlaps.empty:
+        print(
+            "---3c. London metropolitan manual override skipped: "
+            "overlaps found, but none passed threshold."
+        )
+        return df
+
+    best_match = (
+        overlaps.sort_values(
+            ["RC_ID", "overlap_area", "tc_overlap_ratio", "rc_overlap_ratio"],
+            ascending=[True, False, False, False],
+        )
+        .drop_duplicates(subset=["RC_ID"])
+        .copy()
+    )
+
+    name_map = best_match.set_index("RC_ID")[sitename_col].to_dict()
+    df["matched_tc_name"] = df["RC_ID"].map(name_map)
+
+    major_ids = set(
+        best_match.loc[best_match["matched_name"].isin(LONDON_METROPOLITAN_NAMES), "RC_ID"]
+        .astype(str)
+    )
+    major_ids.update(LONDON_METROPOLITAN_MANUAL_RC_IDS)
+    downgrade_ids = set(
+        best_match.loc[~best_match["matched_name"].isin(LONDON_METROPOLITAN_NAMES), "RC_ID"]
+        .astype(str)
+    )
+    downgrade_ids.difference_update(LONDON_METROPOLITAN_MANUAL_RC_IDS)
+
+    promote_mask = london_mask & df["RC_ID"].astype(str).isin(major_ids)
+    downgrade_mask = (
+        london_mask
+        & df["RC_ID"].astype(str).isin(downgrade_ids)
+        & df[class_col].eq("Major Town Centre")
+    )
+
+    df.loc[promote_mask, class_col] = "Major Town Centre"
+    df.loc[downgrade_mask, class_col] = "Town Centre"
+
+    print(
+        f"---3c. London metropolitan manual override: "
+        f"matched {len(best_match)} London centres, "
+        f"promoted {int(promote_mask.sum())} rows to Major Town Centre, "
+        f"downgraded {int(downgrade_mask.sum())} matched rows to Town Centre."
+    )
+    return df
+
+
 #####-----4. Classification with Grouping -----#####
 def classify_with_grouping(
     rc_geo: pd.DataFrame,
@@ -377,6 +541,10 @@ def classify_with_grouping(
     manual_hierarchy_csv: str | None = None,
     london_split_override_enabled: bool = True,
     london_region_name: str = "London",
+    london_town_centres_path: str | None = None,
+    london_town_centres_layer: str | None = None,
+    london_town_centres_sitename_col: str = "sitename",
+    london_town_centres_min_overlap_ratio: float = 0.05,
 ) -> pd.DataFrame:
     if "tr_retailN" not in rc_geo.columns and retailN_col in rc_geo.columns:
         rc_geo = rc_geo.copy()
@@ -482,6 +650,16 @@ def classify_with_grouping(
             id_col="RC_ID",
             retailN_col="tr_retailN",
         )
+    df = apply_london_metropolitan_manual_override(
+        df,
+        london_town_centres_path=london_town_centres_path,
+        london_town_centres_layer=london_town_centres_layer,
+        region_name=london_region_name,
+        region_col="RegionName",
+        class_col="Classification",
+        sitename_col=london_town_centres_sitename_col,
+        min_overlap_ratio=london_town_centres_min_overlap_ratio,
+    )
 
     return df
 
@@ -529,6 +707,10 @@ def run_classification(
     anchor_district_to_town_threshold: int,
     london_split_override_enabled: bool = True,
     london_region_name: str = "London",
+    london_town_centres_path: str | None = None,
+    london_town_centres_layer: str | None = None,
+    london_town_centres_sitename_col: str = "sitename",
+    london_town_centres_min_overlap_ratio: float = 0.05,
 ):
     rc_geo = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)
 
@@ -550,6 +732,10 @@ def run_classification(
             manual_hierarchy_csv=manual_hierarchy_csv,
             london_split_override_enabled=london_split_override_enabled,
             london_region_name=london_region_name,
+            london_town_centres_path=london_town_centres_path,
+            london_town_centres_layer=london_town_centres_layer,
+            london_town_centres_sitename_col=london_town_centres_sitename_col,
+            london_town_centres_min_overlap_ratio=london_town_centres_min_overlap_ratio,
         )
         df_out = apply_anchor_overrides(
             df_out,
