@@ -43,7 +43,7 @@ ALIASES = {
     "boots the chemist": "boots",
     "boots opticians": "boots",
     "boots pharmacy": "boots",
-    "m&s simply food": "marks & spencer",
+    "m&s opticians": "marks & spencer",
     "m & s": "marks & spencer",
     "marks and spencer": "marks & spencer",
     "marks & spencers": "marks & spencer",
@@ -68,14 +68,19 @@ ALIASES = {
 }
 
 COUNT_EXEMPT = {
-    "M&S Opticians",
-    "M&S Food To Go",
     "Harvey Nichols",
     "Hugo Boss",
     "Laura Ashley Home",
     "Zara Home",
     "H&M Kids",
     "Laura Ashley",
+}
+
+EXCLUDED_ANCHOR_TERMS = {
+    "m&s simply food",
+    "m and s simply food",
+    "marks & spencer simply food",
+    "marks and spencer simply food",
 }
 
 
@@ -115,16 +120,27 @@ def _whole_word_match(brand: str, text: str) -> bool:
 
 
 def _get_anchor_category(raw_name: str) -> str | None:
+    brand = _get_anchor_brand(raw_name)
+    if brand is None:
+        return None
+    return NORM_TO_CAT[brand]
+
+
+def _get_anchor_brand(raw_name: str) -> str | None:
     norm = _normalise(raw_name)
     if not norm:
         return None
+    if norm in EXCLUDED_ANCHOR_TERMS:
+        return None
+    if "simply food" in norm and ("m&s" in norm or "marks & spencer" in norm or "marks and spencer" in norm):
+        return None
     if norm in NORM_TO_CAT:
-        return NORM_TO_CAT[norm]
+        return norm
     if norm in ALIAS_TO_NORM:
-        return NORM_TO_CAT[ALIAS_TO_NORM[norm]]
+        return ALIAS_TO_NORM[norm]
     for brand, cat in NORM_TO_CAT.items():
         if _whole_word_match(brand, norm):
-            return cat
+            return brand
     return None
 
 
@@ -137,13 +153,15 @@ def build_ldc_retail_counts(
 
     ldc = pd.read_csv(ldc_csv)
     ldc_live = ldc[ldc["Status"] == "Live"].copy()
-    ldc_live["anchor_category"] = ldc_live["Name"].apply(_get_anchor_category)
-    ldc_live["is_anchor"] = ldc_live["anchor_category"].notna()
+    ldc_live["anchor_brand"] = ldc_live["Name"].apply(_get_anchor_brand)
+    ldc_live["anchor_category"] = ldc_live["anchor_brand"].map(NORM_TO_CAT)
+    ldc_live["is_anchor"] = ldc_live["anchor_brand"].notna()
 
     # Remove low-frequency brand names except explicit exceptions.
     name_counts = ldc_live["Name"].map(ldc_live["Name"].value_counts())
     low_count_mask = (name_counts <= 10) & (~ldc_live["Name"].isin(COUNT_EXEMPT))
     ldc_live.loc[low_count_mask, "is_anchor"] = False
+    ldc_live.loc[low_count_mask, "anchor_brand"] = None
     ldc_live.loc[low_count_mask, "anchor_category"] = None
 
     poi_gdf = gpd.GeoDataFrame(
@@ -161,16 +179,34 @@ def build_ldc_retail_counts(
     unit_counts = joined.groupby("RC_ID").size().reset_index(name="unit_counts")
     anchor_counts = (
         joined[joined["is_anchor"]]
+        .dropna(subset=["anchor_brand"])
+        .drop_duplicates(subset=["RC_ID", "anchor_brand"])
         .groupby("RC_ID")
         .size()
         .reset_index(name="anchor_counts")
     )
+    anchor_shops = (
+        joined[joined["is_anchor"]]
+        .groupby("RC_ID")["Name"]
+        .apply(lambda s: "; ".join(pd.unique(s.dropna().astype(str))))
+        .reset_index(name="anchor_shops")
+    )
 
     rc_retailN = retail_centers.merge(unit_counts, on="RC_ID", how="left")
     rc_retailN = rc_retailN.merge(anchor_counts, on="RC_ID", how="left")
+    rc_retailN = rc_retailN.merge(anchor_shops, on="RC_ID", how="left")
     rc_retailN[["unit_counts", "anchor_counts"]] = (
         rc_retailN[["unit_counts", "anchor_counts"]].fillna(0).astype(int)
     )
+    rc_retailN["anchor_shops"] = rc_retailN["anchor_shops"].fillna("")
+
+    # Keep anchor_shops directly after anchor_counts for downstream readability.
+    cols = rc_retailN.columns.tolist()
+    if "anchor_counts" in cols and "anchor_shops" in cols:
+        cols.remove("anchor_shops")
+        cols.insert(cols.index("anchor_counts") + 1, "anchor_shops")
+        rc_retailN = rc_retailN[cols]
+
     # Backward compatibility for downstream scripts expecting LDC_retailN.
     rc_retailN["LDC_retailN"] = rc_retailN["unit_counts"]
     rc_retailN.to_csv(output_csv, index=False)
