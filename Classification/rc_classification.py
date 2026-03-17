@@ -24,7 +24,7 @@ LONDON_METROPOLITAN_NAMES = {
     "lewisham",
 }
 
-LONDON_METROPOLITAN_MANUAL_RC_IDS = {"898"}
+LONDON_METROPOLITAN_MANUAL_RC_IDS = {"898"} # Brent Cross, as it is not showing in the town centre boundary
 
 LONDON_TOWN_CENTRE_ALIASES = {
     "shepherd s bush": "shepherds bush town centre",
@@ -32,12 +32,20 @@ LONDON_TOWN_CENTRE_ALIASES = {
     "canary wharf and docklands": "canary wharf",
 }
 
+LONDON_MANUAL_OVERRIDE_EXCLUDED_CLASSES = {
+    "Retail Park",
+    "Small Retail Park",
+    "Large Retail Park",
+    "Small Shopping Centre",
+    "Large Shopping Centre",
+}
+
 #####-----1. Hierarchical Classification Functions -----#####
 def apply_hierarchical_classification(
     df: pd.DataFrame,
     retail_park_rc_ids=None,
     id_col: str = "RC_ID",
-    retailN_col: str = "LDC_retailN",
+    retailN_col: str = "tr_retailN",
 ) -> pd.DataFrame:
     df = df.copy()
     retail_park_rc_ids = set() if retail_park_rc_ids is None else set(retail_park_rc_ids)
@@ -498,20 +506,40 @@ def apply_london_metropolitan_manual_override(
     name_map = best_match.set_index("RC_ID")[sitename_col].to_dict()
     df["matched_tc_name"] = df["RC_ID"].map(name_map)
 
-    major_ids = set(
-        best_match.loc[best_match["matched_name"].isin(LONDON_METROPOLITAN_NAMES), "RC_ID"]
-        .astype(str)
-    )
+    major_matches = best_match.loc[
+        best_match["matched_name"].isin(LONDON_METROPOLITAN_NAMES)
+    ].copy()
+    if "tr_retailN" in london_df.columns:
+        major_matches = major_matches.merge(
+            london_df[["RC_ID", "tr_retailN"]],
+            on="RC_ID",
+            how="left",
+        )
+        major_matches["tr_retailN"] = pd.to_numeric(
+            major_matches["tr_retailN"], errors="coerce"
+        ).fillna(-1)
+        major_matches = (
+            major_matches.sort_values(
+                ["matched_name", "tr_retailN", "overlap_area", "tc_overlap_ratio", "rc_overlap_ratio"],
+                ascending=[True, False, False, False, False],
+            )
+            .drop_duplicates(subset=["matched_name"])
+            .copy()
+        )
+
+    major_ids = set(major_matches["RC_ID"].astype(str))
     major_ids.update(LONDON_METROPOLITAN_MANUAL_RC_IDS)
     downgrade_ids = set(
         best_match.loc[~best_match["matched_name"].isin(LONDON_METROPOLITAN_NAMES), "RC_ID"]
         .astype(str)
     )
     downgrade_ids.difference_update(LONDON_METROPOLITAN_MANUAL_RC_IDS)
+    excluded_class_mask = df[class_col].isin(LONDON_MANUAL_OVERRIDE_EXCLUDED_CLASSES)
 
-    promote_mask = london_mask & df["RC_ID"].astype(str).isin(major_ids)
+    promote_mask = london_mask & ~excluded_class_mask & df["RC_ID"].astype(str).isin(major_ids)
     downgrade_mask = (
         london_mask
+        & ~excluded_class_mask
         & df["RC_ID"].astype(str).isin(downgrade_ids)
         & df[class_col].eq("Major Town Centre")
     )
@@ -534,7 +562,7 @@ def classify_with_grouping(
     rc_split: pd.DataFrame,
     parent_col: str = "Parent_ID",
     split_col: str = "was_split",
-    retailN_col: str = "LDC_retailN",
+    retailN_col: str = "tr_retailN",
     *,
     rcid_lookup_csv: str,
     rc_uk_path: str,

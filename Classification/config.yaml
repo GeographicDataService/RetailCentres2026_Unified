@@ -1,6 +1,6 @@
 rc_lookup:
   # Retail centre boundaries (new)
-  rc_path: geo/new_postworkshopcentres05Feb26.gpkg # CHANGE
+  rc_path: geo/postworkshopcentres_camdenmerge.gpkg # CHANGE
   # Local authority districts (LAD)
   lad_path: geo/LA/Local_Authority_Districts_May_2024_Boundaries_UK_BFE_-5758551109064458912/LAD_MAY_2024_UK_BFE.shp
   # Counties boundaries
@@ -14,7 +14,7 @@ rc_lookup:
 
 rc_id_lookup:
   # New RC polygons
-  new_rc_path: geo/new_postworkshopcentres05Feb26.gpkg
+  new_rc_path: geo/postworkshopcentres_camdenmerge.gpkg
   # Old RC polygons (for overlap matching)
   old_rc_path: geo/old_retail_mapmaker/retail_boundaries_uk.gpkg
   # Output mapping old->new RC_ID
@@ -24,7 +24,7 @@ rc_id_lookup:
 
 rc_ldcN:
   # Retail centre polygons (same as rc_lookup rc_path)
-  rc_path: geo/new_postworkshopcentres05Feb26.gpkg
+  rc_path: geo/postworkshopcentres_camdenmerge.gpkg
   # LDC points file
   ldc_csv: data/LDC_Historical_snapshot_2015-01-01-2025-09-30.csv
   # Output retail centre counts
@@ -36,7 +36,7 @@ rc_classification:
   # Counts from rc_ldcN
   rc_ldc_csv: output/retail_centers_with_ldc_retailN.csv
   # Split information
-  split_path: geo/new_postworkshopcentres05Feb26.gpkg 
+  split_path: geo/postworkshopcentres_camdenmerge.gpkg
   split_parent_col: Parent_ID
   split_flag_col: was_split
   # Output file # change the output route
@@ -49,7 +49,7 @@ rc_classification:
   # Old-to-new RC_ID mapping used by manual edits and outlet overrides
   rcid_lookup_csv: output/rcid_lookup_old_to_new.csv
   # Retail centre boundaries used for outlet spatial override
-  rc_uk_path: geo/new_postworkshopcentres05Feb26.gpkg
+  rc_uk_path: geo/postworkshopcentres_camdenmerge.gpkg
   # Optional CSV with columns including RC_ID and H_Classification
   manual_hierarchy_csv: null
   # Anchor override: promote District Centre -> Town Centre if anchor_counts >= threshold

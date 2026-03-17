@@ -49,10 +49,10 @@ def load_config(path: str | None = None) -> dict:
 def main() -> None:
     cfg = load_config()
 
-    # build_rcid_lookup(**cfg["rc_id_lookup"])
-    # print("---1. RC_ID lookup between old and new RC_ID built.")
-    # build_rc_lookups(**cfg["rc_lookup"])
-    # build_ldc_retail_counts(**cfg["rc_ldcN"])
+    build_rcid_lookup(**cfg["rc_id_lookup"])
+    print("---1. RC_ID lookup between old and new RC_ID built.")
+    build_rc_lookups(**cfg["rc_lookup"])
+    build_ldc_retail_counts(**cfg["rc_ldcN"])
     rc_class_cfg = cfg["rc_classification"].copy()
     rc_class_cfg.setdefault("london_split_override_enabled", True)
     rc_class_cfg.setdefault("london_region_name", "London")
