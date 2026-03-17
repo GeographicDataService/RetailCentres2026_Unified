@@ -2,6 +2,8 @@
 
 This repo builds retail-centre lookup tables, counts retail activity, and runs the final centre classification.
 
+Note: the old-to-new `RC_ID` lookup does not need to be rebuilt every time. It normally only needs to be run once for a given set of retail-centre boundaries. After that, the `build_rcid_lookup(...)` step in [0_run_all.py](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/0_run_all.py) can be skipped unless the source retail-centre polygons change.
+
 ## What It Does
 
 Running the pipeline does 4 things:
@@ -16,6 +18,19 @@ Running the pipeline does 4 things:
 - [0_run_all.py](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/0_run_all.py): main entry point
 - [config.yaml](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/config.yaml): all input/output paths and settings
 - [rc_classification.py](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/rc_classification.py): classification logic
+
+## Source Files
+
+With the current [config.yaml](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/config.yaml), the main input source files are:
+
+- retail-centre polygons: `geo/postworkshopcentres_camdenmerge.gpkg`
+- old retail-centre polygons for ID matching: `geo/old_retail_mapmaker/retail_boundaries_uk.gpkg`
+- LAD boundaries: `geo/LA/Local_Authority_Districts_May_2024_Boundaries_UK_BFE_-5758551109064458912/LAD_MAY_2024_UK_BFE.shp`
+- county boundaries: `geo/Counties/uk_27700.shp`
+- region boundaries: `geo/Regions/GB_regions.shp`
+- built-up area boundaries: `geo/buildup/merged_BUA_dissolved2025.gpkg`
+- LDC input points: `data/LDC_Historical_snapshot_2015-01-01-2025-09-30.csv`
+- London town centre boundaries: `geo/lodnon_town_centre/London_Town_Centres_Boundaries.gpkg`
 
 ## Requirements
 
