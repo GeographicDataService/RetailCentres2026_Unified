@@ -268,21 +268,42 @@ def generate_names():
         merged.loc[has_inner, "nearest"] = merged.loc[has_inner, "inner"]
         level2["nearest"] = merged["nearest"]
 
-    # NI centres: OS Open Names doesn't cover NI, so clear the bogus
-    # Scottish nearest place and use SOA neighbourhood name instead.
-    # Identify NI centres from rc["RegionName"] since ONS Country may be NaN.
+    # NI centres: OS Open Names doesn't cover NI. Use settlement name
+    # for large centres (like OS City/Town), SDZ for smaller ones (like
+    # OS Suburban/Village). Fallback to whichever is available.
     ni_ids = rc.loc[rc["RegionName"].isin(["NI", "Northern Ireland"]), "RC_ID"].tolist()
+    large_classes = {"Regional Centre", "Major Town Centre", "Town Centre"}
     if ni_ids:
         # Clear OS-derived names for NI centres
         level2.loc[level2["RC_ID"].isin(ni_ids), "nearest"] = None
 
-        # Use SOA neighbourhood from ONS if available
-        if "NbhdNM_1" in ons.columns:
-            for rc_id in ni_ids:
+        for rc_id in ni_ids:
+            cls = rc.loc[rc["RC_ID"] == rc_id, "Classification"]
+            is_large = len(cls) > 0 and cls.iloc[0] in large_classes
+            name = None
+
+            # Primary source based on size
+            if is_large and "CityNM_1" in ons.columns:
+                city = ons.loc[ons["RC_ID"] == rc_id, "CityNM_1"]
+                if len(city) > 0 and pd.notna(city.iloc[0]) and str(city.iloc[0]).strip():
+                    name = str(city.iloc[0]).strip().title()
+            elif not is_large and "NbhdNM_1" in ons.columns:
                 nbhd = ons.loc[ons["RC_ID"] == rc_id, "NbhdNM_1"]
                 if len(nbhd) > 0 and pd.notna(nbhd.iloc[0]):
-                    nbhd_clean = re.sub(r"_*\d+", "", str(nbhd.iloc[0])).strip()
-                    level2.loc[level2["RC_ID"] == rc_id, "nearest"] = nbhd_clean
+                    name = re.sub(r"_[A-Z]$|_*\d+", "", str(nbhd.iloc[0])).replace("_", " ").strip()
+
+            # Fallback to the other source
+            if name is None and "CityNM_1" in ons.columns:
+                city = ons.loc[ons["RC_ID"] == rc_id, "CityNM_1"]
+                if len(city) > 0 and pd.notna(city.iloc[0]) and str(city.iloc[0]).strip():
+                    name = str(city.iloc[0]).strip().title()
+            if name is None and "NbhdNM_1" in ons.columns:
+                nbhd = ons.loc[ons["RC_ID"] == rc_id, "NbhdNM_1"]
+                if len(nbhd) > 0 and pd.notna(nbhd.iloc[0]):
+                    name = re.sub(r"_[A-Z]$|_*\d+", "", str(nbhd.iloc[0])).replace("_", " ").strip()
+
+            if name:
+                level2.loc[level2["RC_ID"] == rc_id, "nearest"] = name
 
     # ─── Merge and assemble final names ────────────────────────────
     print("  Assembling final names...")
@@ -325,6 +346,9 @@ def generate_names():
     naming = naming.merge(level2[["RC_ID", "nearest"]].rename(columns={"nearest": "Neighbourhood"}),
                           on="RC_ID", how="left")
 
+    # Track sub-areas so they always get street names
+    subarea_ids = set(rc.loc[rc["was_split"] == True, "RC_ID"].tolist())
+
     # Assemble names based on classification
     naming["RC_Name"] = ""
 
@@ -335,8 +359,9 @@ def generate_names():
         la = naming.loc[idx, "LocalAuthorityNM_1"]
         region = naming.loc[idx, "RegionNM"]
         country = naming.loc[idx, "Country"]
+        is_subarea = naming.loc[idx, "RC_ID"] in subarea_ids
 
-        if cls in ("Regional Centre", "Major Town Centre", "Town Centre"):
+        if cls in ("Regional Centre", "Major Town Centre", "Town Centre") and not is_subarea:
             # No street — Neighbourhood; LA (Region; Country)
             name = assemble_name_components([None, nbhd, la, region, country])
         else:
@@ -405,6 +430,9 @@ def generate_names():
             parts[0] = parts[0].strip() + " Retail Park"
             naming.loc[idx, "RC_Name"] = "; ".join(p.strip() for p in parts)
 
+    # Manual retail park overrides
+    naming.loc[naming["RC_ID"] == "3379", "RC_Name"] = naming.loc[naming["RC_ID"] == "3379", "RC_Name"].str.replace("Europa Boulevard Retail Park", "Gemini Retail Park")
+
     # ─── Shopping centre / outlet naming ───────────────────────────
     print("  Shopping centre naming...")
     outlets = match_outlets_to_centres(rc)
@@ -447,6 +475,8 @@ def generate_names():
                     if pd.notna(d) and d < best_dist and pd.notna(nm):
                         best_dist = d
                         city_name = str(nm).split(";")[0].strip()
+                        if city_name == "City of London":
+                            city_name = "London"
 
         # Primary sub-area = highest retail count
         primary_rc_id = group.sort_values("tr_retailN", ascending=False).iloc[0]["RC_ID"]
@@ -454,17 +484,28 @@ def generate_names():
         if not primary_mask.any():
             continue
 
-        # Build parent name: City; LA (Region; Country)
+        # Build parent location from primary sub-area
         la = naming.loc[primary_mask, "LocalAuthorityNM_1"].iloc[0]
         region = naming.loc[primary_mask, "RegionNM"].iloc[0]
         country = naming.loc[primary_mask, "Country"].iloc[0]
-        parent_name = assemble_name_components([None, city_name, la, region, country])
 
-        # All sub-areas in this group get the parent name
+        # London sub-areas: use "London" as LA, not individual boroughs
+        if city_name == "London":
+            la = "London"
+
+        # Each sub-area already has a pipeline name; take its first component
+        # and rebuild as: first_part - CityName; LA (Region; Country)
         for mid in member_ids:
             mask = naming["RC_ID"] == mid
-            if mask.any():
-                naming.loc[mask, "RC_Name"] = parent_name
+            if not mask.any():
+                continue
+
+            existing_name = naming.loc[mask, "RC_Name"].iloc[0]
+            if city_name:
+                first_part = existing_name.split(";", 1)[0].strip()
+                naming.loc[mask, "RC_Name"] = assemble_name_components(
+                    [None, f"{first_part} - {city_name}", la, region, country]
+                )
 
     # ─── Cleanup ──────────────────────────────────────────────────
     print("\n=== 2d. Cleanup & Deduplication ===")

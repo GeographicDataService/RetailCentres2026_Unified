@@ -156,6 +156,12 @@ def load_bua_boundaries():
     if ni_sett:
         print(f"  Loading NI Settlements from {ni_sett[0]}...")
         ns = gpd.read_file(ni_sett[0])
+        # File CRS metadata may be wrong (e.g. says 4326 but coords are Irish Grid)
+        # Detect by checking if coordinates are in Irish Grid range
+        bounds = ns.total_bounds
+        if bounds[0] > 10000 and bounds[2] < 400000 and bounds[1] > 300000 and bounds[3] < 500000:
+            ns = ns.set_crs(29903, allow_override=True)
+        ns["geometry"] = ns["geometry"].make_valid()
         # Known columns: Code, Name
         ns = ns.rename(columns={"Code": "CityCD", "Name": "CityNM"})
         ns["CityTY"] = "Settlements15CD"
@@ -193,28 +199,24 @@ def load_neighbourhood_boundaries():
         iz["NbhdTY"] = "IZ11CD"
         parts.append(iz[["NbhdCD", "NbhdNM", "NbhdTY", "geometry"]])
 
-    # NI SOA
+    # NI SDZ (Super Data Zones)
     ni_dir = os.path.join(DATA_DIR, "northern_ireland")
-    soa_files = glob.glob(os.path.join(ni_dir, "**/*SOA*.*"), recursive=True)
-    soa_files = [f for f in soa_files if f.endswith((".shp", ".gpkg", ".geojson", ".json"))]
-    if soa_files:
-        print(f"  Loading NI SOA from {soa_files[0]}...")
-        soa = gpd.read_file(soa_files[0])
+    sdz_files = glob.glob(os.path.join(ni_dir, "**/*SDZ*.*"), recursive=True)
+    sdz_files = [f for f in sdz_files if f.endswith((".shp", ".gpkg", ".geojson", ".json"))]
+    if sdz_files:
+        print(f"  Loading NI SDZ from {sdz_files[0]}...")
+        sdz = gpd.read_file(sdz_files[0])
         # Try common column name patterns
-        for c in soa.columns:
-            if "CODE" in c.upper() and "SOA" in c.upper():
-                soa = soa.rename(columns={c: "NbhdCD"})
-            elif "LABEL" in c.upper() and "SOA" in c.upper():
-                soa = soa.rename(columns={c: "NbhdNM"})
-        if "NbhdCD" not in soa.columns and "SOA_CODE" in soa.columns:
-            soa = soa.rename(columns={"SOA_CODE": "NbhdCD"})
-        if "NbhdNM" not in soa.columns and "SOA_LABEL" in soa.columns:
-            soa = soa.rename(columns={"SOA_LABEL": "NbhdNM"})
-        soa["NbhdTY"] = "SOA11CD"
-        if "NbhdCD" in soa.columns and "NbhdNM" in soa.columns:
-            parts.append(soa[["NbhdCD", "NbhdNM", "NbhdTY", "geometry"]])
+        for c in sdz.columns:
+            if c.upper().endswith("_CD") and "SDZ" in c.upper():
+                sdz = sdz.rename(columns={c: "NbhdCD"})
+            elif c.upper().endswith("_NM") and "SDZ" in c.upper():
+                sdz = sdz.rename(columns={c: "NbhdNM"})
+        sdz["NbhdTY"] = "SDZ2021CD"
+        if "NbhdCD" in sdz.columns and "NbhdNM" in sdz.columns:
+            parts.append(sdz[["NbhdCD", "NbhdNM", "NbhdTY", "geometry"]])
     else:
-        print("  WARNING: NI SOA boundaries not found (download manually from NISRA)")
+        print("  WARNING: NI SDZ boundaries not found (download manually from NISRA)")
 
     if parts:
         parts = [p.to_crs(CRS_BNG) if p.crs != CRS_BNG else p for p in parts]
@@ -502,6 +504,7 @@ UK_STREET_SUFFIXES = {
     "wharf", "quay", "circus", "cross", "end", "market", "meadow", "village",
     "strand", "mall", "arcade", "precinct", "esplanade", "promenade",
     "high street", "st", "rd", "ave", "dr", "ln", "ct", "pl", "cres",
+    "airport", "station",
 }
 
 
@@ -608,6 +611,9 @@ def extract_street_name(address):
 
     if not addr:
         return None
+
+    # Normalise before validation (expand abbreviations, strip dots)
+    addr = normalise_street_name(addr)
 
     # Check against OS road names first (skip very short matches)
     os_roads = _load_os_road_names()
@@ -726,7 +732,7 @@ def generate_street_naming(rc):
 
     # Extract street names and expand abbreviations
     print("  Extracting street names...")
-    joined["street"] = joined["address"].apply(extract_street_name).apply(normalise_street_name)
+    joined["street"] = joined["address"].apply(extract_street_name)
     joined = joined[joined["street"].notna() & (joined["street"] != "")].copy()
     print(f"  {len(joined)} POIs with valid street names")
 
