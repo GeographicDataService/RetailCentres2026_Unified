@@ -25,6 +25,520 @@ EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
 GPKG_PATH = os.path.join(BASE_DIR, "rc2025_foursquare_ignoreCounty.gpkg")
 CRS_BNG = "EPSG:27700"
 
+# ─── Sub-area manual names ────────────────────────────────────────────
+# Curated local names for sub-areas in major city centres.
+# Three versions available:
+#   "v1" — street-focused, single names where dominant
+#   "v2" — neighbourhood/landmark-focused, more two-part names
+#   "v3" — web-verified geography + POI data, proper quarter/area names
+# Set to None to disable and use pipeline names.
+MANUAL_SUBAREA_VERSION = "v4"
+
+MANUAL_SUBAREA_NAMES_V1 = {
+    # Liverpool
+    "97":   "Liverpool ONE",
+    "90":   "Bold Street",
+    "288":  "Castle Street",
+    "193":  "Church Street & Lime Street",
+    "548":  "Hope Street",
+    # Manchester
+    "17":   "Northern Quarter",
+    "34":   "Deansgate & King Street",
+    "92":   "Arndale",
+    "175":  "Chinatown & Gay Village",
+    "332":  "Spinningfields",
+    "436":  "Oxford Street",
+    "750":  "Piccadilly",
+    "4992": "Chapel Street",
+    # Sheffield
+    "148":  "Fargate",
+    "476":  "Division Street",
+    "432":  "The Moor",
+    "389":  "West Street",
+    "2096": "The Wicker",
+    # Edinburgh
+    "56":   "New Town",
+    "95":   "Royal Mile",
+    "112":  "Tollcross",
+    "146":  "St James Quarter",
+    "224":  "Broughton",
+    "234":  "Newington",
+    "246":  "Leith",
+    "331":  "Nicolson Street",
+    "361":  "Grassmarket & Victoria Street",
+    "388":  "West End",
+    "580":  "Dalry",
+    "983":  "Haymarket",
+    # Glasgow
+    "28":   "Buchanan Street",
+    "43":   "Sauchiehall Street",
+    "123":  "Merchant City",
+    "225":  "St Enoch",
+    "400":  "Charing Cross",
+    "650":  "Finnieston",
+    "1131": "Gallowgate",
+    "1974": "Bothwell Street",
+    "2909": "Glasgow Cross",
+    "4201": "George Street",
+    # Leeds
+    "44":   "Briggate",
+    "60":   "Kirkgate Market",
+    "365":  "Merrion Centre",
+    "378":  "Park Row",
+    "1144": "Millennium Square",
+    "2337": "Granary Wharf",
+    "4677": "St Peter's Square",
+    # Birmingham
+    "185":  "Colmore Row",
+    "198":  "Grand Central",
+    "204":  "Southside",
+    "207":  "Bullring",
+    "657":  "The Mailbox",
+    "708":  "Custard Factory",
+    "1494": "Newhall Street",
+    "2135": "Paradise",
+    "3900": "Digbeth",
+    # Bristol
+    "99":   "Broadmead",
+    "139":  "Old City",
+    "232":  "Park Street",
+    "1953": "King Street",
+    "4461": "Park Row",
+    # Newcastle
+    "125":  "Eldon Square",
+    "156":  "Northumberland Street",
+    "209":  "Grey Street",
+    "221":  "Grainger Town",
+    # Norwich
+    "103":  "The Lanes",
+    "386":  "Tombland",
+    "387":  "Castle Mall",
+    "658":  "Chapelfield",
+    "958":  "Magdalen Street",
+    "2241": "St Benedicts",
+    # Nottingham
+    "77":   "Bridlesmith Gate",
+    "157":  "Victoria Centre",
+    "212":  "Old Market Square",
+    "779":  "Hockley",
+    "1325": "Mansfield Road",
+    "2101": "Broadmarsh",
+    # Aberdeen
+    "213":  "Belmont Street",
+    "260":  "Holburn Street",
+    "494":  "Union Street",
+    "576":  "George Street",
+    "975":  "Union Square",
+    "1030": "Castlegate",
+    "1670": "Rosemount",
+    # Leicester
+    "82":   "Highcross",
+    "418":  "Granby Street",
+    "597":  "Market Street",
+    "623":  "Haymarket",
+    "1594": "Belgrave Gate",
+    "3941": "Abbey Street",
+    # York
+    "29":   "Stonegate & Shambles",
+    "620":  "Micklegate",
+    "1004": "Gillygate & Bootham",
+    "1324": "Walmgate",
+    "1657": "Goodramgate",
+    # Bath
+    "88":   "Milsom Street",
+    "277":  "Walcot Street",
+    "317":  "Southgate",
+    "2612": "Green Park",
+    # Brighton
+    "15":   "The Lanes",
+    "32":   "North Laine",
+    "109":  "Western Road",
+    "178":  "Church Road, Hove",
+    "261":  "Kemptown",
+    "283":  "London Road",
+    "1536": "St George's Road",
+}
+
+MANUAL_SUBAREA_NAMES_V2 = {
+    # Liverpool
+    "97":   "Liverpool ONE",
+    "90":   "Bold Street & Ropewalks",
+    "288":  "Commercial District",
+    "193":  "Church Street & St John's",
+    "548":  "Georgian Quarter & Hope Street",
+    # Manchester
+    "17":   "Northern Quarter",
+    "34":   "Deansgate & St Ann's Square",
+    "92":   "Arndale & Exchange Square",
+    "175":  "Chinatown & Gay Village",
+    "332":  "Spinningfields",
+    "436":  "St Peter's Square & Oxford Road",
+    "750":  "Piccadilly & Ancoats",
+    "4992": "Chapel Wharf",
+    # Sheffield
+    "148":  "Fargate & High Street",
+    "476":  "Devonshire Quarter",
+    "432":  "The Moor",
+    "389":  "West Street & University",
+    "2096": "The Wicker",
+    # Edinburgh
+    "56":   "New Town",
+    "95":   "Royal Mile & Old Town",
+    "112":  "Tollcross & Bruntsfield",
+    "146":  "St James Quarter",
+    "224":  "Broughton & Leith Walk",
+    "234":  "Newington & Clerk Street",
+    "246":  "Leith",
+    "331":  "University & Nicolson Street",
+    "361":  "Grassmarket & Victoria Street",
+    "388":  "West End",
+    "580":  "Dalry",
+    "983":  "Haymarket",
+    # Glasgow
+    "28":   "Buchanan Street & Royal Exchange",
+    "43":   "Sauchiehall Street & Buchanan Galleries",
+    "123":  "Merchant City",
+    "225":  "St Enoch & Argyle Street",
+    "400":  "Charing Cross",
+    "650":  "Finnieston",
+    "1131": "Gallowgate & Calton",
+    "1974": "Blythswood",
+    "2909": "Glasgow Cross",
+    "4201": "George Street",
+    # Leeds
+    "44":   "Briggate & Trinity",
+    "60":   "Kirkgate Market & Vicar Lane",
+    "365":  "Merrion Centre & The Headrow",
+    "378":  "Park Row & City Square",
+    "1144": "Millennium Square",
+    "2337": "Granary Wharf",
+    "4677": "St Peter's Square",
+    # Birmingham
+    "185":  "Colmore Row & Cathedral Quarter",
+    "198":  "Grand Central & New Street",
+    "204":  "Southside & Chinese Quarter",
+    "207":  "Bullring & Selfridges",
+    "657":  "The Mailbox & Brindleyplace",
+    "708":  "Custard Factory & Digbeth Creative Quarter",
+    "1494": "Jewellery Quarter",
+    "2135": "Paradise & Centenary Square",
+    "3900": "Digbeth",
+    # Bristol
+    "99":   "Broadmead & Cabot Circus",
+    "139":  "Old City & Christmas Steps",
+    "232":  "Park Street & Clifton Triangle",
+    "1953": "King Street & Queen Square",
+    "4461": "Park Row",
+    # Newcastle
+    "125":  "Eldon Square",
+    "156":  "Northumberland Street",
+    "209":  "Grey Street & Quayside",
+    "221":  "Grainger Town & Chinatown",
+    # Norwich
+    "103":  "The Lanes & Royal Arcade",
+    "386":  "Tombland & Elm Hill",
+    "387":  "Castle Mall & Market",
+    "658":  "Chapelfield & Chantry Place",
+    "958":  "Magdalen Street & Anglia Square",
+    "2241": "St Benedicts",
+    # Nottingham
+    "77":   "Bridlesmith Gate & Wheeler Gate",
+    "157":  "Victoria Centre",
+    "212":  "Old Market Square",
+    "779":  "Hockley & Lace Market",
+    "1325": "Mansfield Road",
+    "2101": "Broadmarsh",
+    # Aberdeen
+    "213":  "Belmont Street & Bon Accord",
+    "260":  "Holburn & West End",
+    "494":  "Union Street & Trinity Centre",
+    "576":  "George Street",
+    "975":  "Union Square",
+    "1030": "Castlegate",
+    "1670": "Rosemount",
+    # Leicester
+    "82":   "Highcross & Market Place",
+    "418":  "Cultural Quarter & Granby Street",
+    "597":  "Market & Town Hall Square",
+    "623":  "Haymarket & Humberstone Gate",
+    "1594": "Belgrave Gate",
+    "3941": "St Margaret's",
+    # York
+    "29":   "Stonegate & Shambles",
+    "620":  "Micklegate",
+    "1004": "Gillygate & Bootham",
+    "1324": "Walmgate",
+    "1657": "Goodramgate",
+    # Bath
+    "88":   "Milsom Street & Bath Street",
+    "277":  "Walcot & Artisan Quarter",
+    "317":  "Southgate & Stall Street",
+    "2612": "Green Park",
+    # Brighton
+    "15":   "The Lanes",
+    "32":   "North Laine",
+    "109":  "Western Road & Churchill Square",
+    "178":  "Church Road, Hove",
+    "261":  "Kemptown",
+    "283":  "London Road & Open Market",
+    "1536": "St George's Road",
+}
+
+# V3: web-verified geography + POI data — proper quarter/neighbourhood names
+MANUAL_SUBAREA_NAMES_V3 = {
+    # Liverpool (verified: visitliverpool.com neighbourhood map)
+    "97":   "Liverpool ONE & Cavern Quarter",
+    "90":   "Ropewalks",
+    "288":  "Commercial District",
+    "193":  "St George's Quarter",
+    "548":  "Georgian Quarter",
+    # Manchester (verified: MCC regeneration areas + unlockmanchester.com)
+    "17":   "Northern Quarter",
+    "34":   "St Ann's Square & King Street",
+    "92":   "Arndale & Exchange Square",
+    "175":  "Chinatown & Gay Village",
+    "332":  "Spinningfields",
+    "436":  "Petersfield & St Peter's Square",
+    "750":  "Piccadilly Basin",
+    "4992": "NOMA",
+    # Sheffield (verified: sheffieldcitycentre.com quarters)
+    "148":  "Cathedral Quarter",
+    "476":  "Heart of the City",
+    "432":  "The Moor",
+    "389":  "Devonshire Quarter",
+    "2096": "The Wicker",
+    # Edinburgh (verified: edinburgh.org neighbourhoods)
+    "56":   "New Town",
+    "95":   "Royal Mile & Old Town",
+    "112":  "Tollcross",
+    "146":  "St James Quarter",
+    "224":  "Broughton",
+    "234":  "Newington",
+    "246":  "Leith",
+    "331":  "Southside",
+    "361":  "Grassmarket",
+    "388":  "West End",
+    "580":  "Dalry",
+    "983":  "Haymarket",
+    # Glasgow (verified: glasgowcitycentrestrategy.com districts)
+    "28":   "Buchanan Street",
+    "43":   "Sauchiehall Street & Garnethill",
+    "123":  "Merchant City",
+    "225":  "St Enoch",
+    "400":  "Charing Cross",
+    "650":  "Finnieston",
+    "1131": "Gallowgate & Calton",
+    "1974": "Blythswood",
+    "2909": "Townhead",
+    "4201": "George Street",
+    # Leeds (verified: leeds city centre Wikipedia + council docs)
+    "44":   "Briggate & Trinity",
+    "60":   "Kirkgate Market & Vicar Lane",
+    "365":  "Merrion Centre & The Headrow",
+    "378":  "Financial Quarter & Park Row",
+    "1144": "Civic Quarter & Millennium Square",
+    "2337": "Granary Wharf",
+    "4677": "Quarry Hill",
+    # Birmingham (verified: birmingham.gov.uk + BIDs)
+    "185":  "Colmore Business District",
+    "198":  "Grand Central & New Street",
+    "204":  "Southside & Chinatown",
+    "207":  "Bullring",
+    "657":  "The Mailbox & Westside",
+    "708":  "Digbeth East",
+    "1494": "Jewellery Quarter",
+    "2135": "Paradise & Centenary Square",
+    "3900": "Digbeth",
+    # Bristol (verified: 365bristol.com + bristolshoppingquarter.co.uk)
+    "99":   "Broadmead & Cabot Circus",
+    "139":  "Old City",
+    "232":  "Park Street & Clifton Triangle",
+    "1953": "King Street & Queen Square",
+    "4461": "Park Row",
+    # Newcastle (verified: Grainger Town heritage area + wikipedia)
+    "125":  "Eldon Square",
+    "156":  "Northumberland Street",
+    "209":  "Grey Street & Quayside",
+    "221":  "Grainger Town & Chinatown",
+    # Norwich (verified: cathedralquarternorwich.co.uk + council docs)
+    "103":  "The Lanes",
+    "386":  "Cathedral Quarter & Tombland",
+    "387":  "Castle Mall",
+    "658":  "St Stephens & Chapelfield",
+    "958":  "Magdalen Street",
+    "2241": "St Benedicts",
+    # Nottingham (verified: visit-nottinghamshire.co.uk + conservation areas)
+    "77":   "Old Market Square",
+    "157":  "Victoria Centre",
+    "212":  "Castle Quarter",
+    "779":  "Hockley & Lace Market",
+    "1325": "Mansfield Road",
+    "2101": "Broadmarsh & Station",
+    # Aberdeen (verified: wikipedia + aberdeen.gov.uk conservation areas)
+    "213":  "Belmont Street & Bon Accord",
+    "260":  "Holburn & West End",
+    "494":  "Union Street",
+    "576":  "George Street",
+    "975":  "Union Square",
+    "1030": "Castlegate",
+    "1670": "Rosemount",
+    # Leicester (verified: visitleicester.info + council conservation areas)
+    "82":   "Highcross & Market Place",
+    "418":  "Cultural Quarter",
+    "597":  "Old Town & The Lanes",
+    "623":  "Haymarket",
+    "1594": "Belgrave Gate",
+    "3941": "St Margaret's",
+    # York (verified: york areas wikipedia)
+    "29":   "Stonegate & Shambles",
+    "620":  "Micklegate",
+    "1004": "Gillygate & Bootham",
+    "1324": "Walmgate",
+    "1657": "Goodramgate",
+    # Bath (verified: visitbath.co.uk + BANES council)
+    "88":   "Milsom Quarter",
+    "277":  "Walcot & Artisan Quarter",
+    "317":  "Southgate",
+    "2612": "Green Park",
+    # Brighton (verified: wikipedia + neighbourhood guides)
+    "15":   "The Lanes",
+    "32":   "North Laine",
+    "109":  "Western Road",
+    "178":  "Hove",
+    "261":  "Kemptown",
+    "283":  "London Road",
+    "1536": "East Kemptown",
+}
+
+# V4: POI address-weighted + web-verified blend — street names where POI
+# data is strongly dominant, quarter/neighbourhood names where POI is
+# dispersed and a well-known area name exists. Non-London sub-areas only.
+MANUAL_SUBAREA_NAMES_V4 = {
+    # Edinburgh — POI address data + edinburgh.org neighbourhoods
+    "56":   "George Street",              # POI: George St 20%, Rose St 14%
+    "95":   "Royal Mile",                 # POI: High St 15% (=Royal Mile)
+    "112":  "Tollcross",                  # POI: Lothian Rd 14%, Home St 10%. OS=Tollcross
+    "146":  "St James Quarter",           # POI: St James Quarter 11%, Princes St 9%
+    "224":  "Broughton Street & Elm Row",  # POI: Broughton St 15%, Elm Row 14%
+    "234":  "Clerk Street",               # POI: South Clerk St 18%, Clerk St 16%
+    "246":  "Leith Walk",                 # POI: Leith Walk 31%, Great Junction St 21%
+    "331":  "Nicolson Street",            # POI: Nicolson St 19%, Forrest Rd 14%
+    "361":  "Grassmarket",                # POI: Victoria St 11%. Well-known quarter name
+    "388":  "West End",                   # POI: Queensferry St 16%. OS=West End
+    "580":  "Dalry Road",                 # POI: Dalry Rd 57%
+    "983":  "Haymarket",                  # POI: Morrison St 49%. Haymarket more recognisable
+    # Brighton — POI address data + neighbourhood guides
+    "15":   "The Lanes",                  # POI dispersed (8%). Well-known area name
+    "32":   "North Laine",                # POI dispersed (10%). Well-known area name
+    "109":  "Western Road",               # POI: Western Rd 46%
+    "178":  "Church Road, Hove",          # POI: Church Rd 38%, George St 18%
+    "261":  "St James's Street",          # POI: St James's St 26%
+    "283":  "London Road",                # POI: London Rd 30%
+    "1536": "St George's Road",           # POI: St Georges Rd 47%
+    # Manchester — POI address data + MCC regeneration areas
+    "17":   "Northern Quarter",           # POI dispersed (8%). Well-known quarter
+    "34":   "Deansgate & King Street",    # POI: Deansgate 11%, King St 10%
+    "92":   "Arndale & Market Street",    # POI: Arndale Centre 11%, Market St 9%
+    "175":  "Chinatown & Gay Village",    # POI: Princess St 13%, Portland St 12%. Quarter names better
+    "332":  "Spinningfields",             # POI: Deansgate 23%. Well-known quarter
+    "436":  "Oxford Street",              # POI: Oxford St 16%, Oxford Rd 10%
+    "750":  "Piccadilly Basin",           # POI: Ducie St 21%, Great Ancoats St 19%. OS=Ancoats
+    "4992": "Chapel Street",              # POI: Chapel St 50%
+    # Glasgow — POI address data + glasgowcitycentrestrategy.com
+    "28":   "Buchanan Street",            # POI: Buchanan St 11%
+    "43":   "Sauchiehall Street & Bath Street",  # POI: Sauchiehall St 21%, Bath St 18%
+    "123":  "Merchant City",              # POI: Trongate 11%. OS=Merchant City
+    "225":  "Argyle Street",              # POI: Argyle St 17%. OS=St Enochs
+    "400":  "Charing Cross",              # POI: Sauchiehall St 27%. Well-known junction/area
+    "650":  "Finnieston",                 # POI: Argyle St 61%. OS=Finnieston, well-known neighbourhood
+    "1131": "Gallowgate",                 # POI: Gallowgate 53%
+    "1974": "Bothwell Street",            # POI: Bothwell St 33%, Waterloo St 13%
+    "2909": "High Street",                # POI: High St 70%, Duke St 18%
+    "4201": "George Street",              # POI: George St 77%
+    # Leeds — POI address data + council docs
+    "44":   "Albion Street & Briggate",    # POI: Albion St 9%, Briggate 8%
+    "60":   "Kirkgate Market & Vicar Lane",  # POI: New Briggate 9%, Vicar Lane 8%
+    "365":  "Merrion Centre & The Headrow",  # POI: The Light 13%, The Headrow 12%
+    "378":  "Park Row",                   # POI: Wellington St 8%, Park Row 5%
+    "1144": "Millennium Square",          # POI: Great George St 38%. Landmark more recognisable
+    "2337": "Granary Wharf",              # POI: Dark Neville St 11%, Granary Wharf 11%
+    "4677": "St Peter's Square",          # POI str1: St Peter's Square 18%. OS=Quarry Hill
+    # Liverpool — POI address data + visitliverpool.com
+    "97":   "Liverpool ONE & Cavern Quarter",  # POI: Lord St 8%, Mathew St, Paradise St 7%
+    "90":   "Bold Street & Ropewalks",    # POI: Bold St 23%
+    "288":  "Commercial District",        # POI: Castle St 11%, Old Hall St 7%
+    "193":  "Church Street & St John's",   # POI: Church St, Ranelagh St, St John's Shopping Centre, Clayton Square
+    "548":  "Hope Street & Georgian Quarter",  # POI: Rodney St 27%, Hope St 16%
+    # Birmingham — POI address data + birmingham.gov.uk BIDs
+    "185":  "Colmore Row",                # POI: Corporation St 13%, Colmore Row 9%
+    "198":  "Grand Central & New Street", # POI: New St 12%, Grand Central 6%
+    "204":  "Hurst Street",               # POI: Hurst St 19%
+    "207":  "Bullring",                   # POI: Bullring 10%, High St 6%
+    "657":  "The Mailbox",                # POI: Wharfside St 22%, The Mailbox 13%
+    "708":  "Custard Factory",            # POI: Gibb St 22%, Custard Factory 7%. OS=Deritend
+    "1494": "Jewellery Quarter",          # POI: Newhall St 26%. Well-known quarter
+    "2135": "Paradise",                   # POI: Paradise Forum 13%, Paradise Pl 13%
+    "3900": "Digbeth",                    # POI: Digbeth 32%. OS=Digbeth
+    # Nottingham — POI address data + visit-nottinghamshire.co.uk
+    "77":   "Old Market Square",          # POI dispersed (4%). Central square landmark
+    "157":  "Victoria Centre",            # POI: Victoria Centre 12%
+    "212":  "Castle Quarter",             # POI: Friar Lane 13%. Quarter name recognised
+    "779":  "Hockley & Lace Market",      # POI dispersed. OS=Lace Market
+    "1325": "Mansfield Road",             # POI: Mansfield Rd 63%
+    "2101": "Carrington Street",          # POI: Carrington St 57%, Station St 14%
+    # Newcastle — POI address data + Grainger Town heritage area
+    "125":  "Eldon Square",               # POI: Eldon Square 9%, Grainger St 8%
+    "156":  "Northumberland Street",      # POI: Northumberland St 19%
+    "209":  "Grey Street & Mosley Street",  # POI: Grey St 8%, Mosley St 7%
+    "221":  "Grainger Town",              # POI: Clayton St 12%, Westgate Rd 9%. Quarter name
+    # Bristol — POI address data + bristolshoppingquarter.co.uk
+    "99":   "Broadmead",                  # POI: Broadmead 11%, Cabot Circus 5%
+    "139":  "Old City",                   # POI: Baldwin St 13%, Corn St 7%. Quarter name
+    "232":  "Park Street",                # POI: Park St 26%, Queens Rd 13%
+    "1953": "King Street",                # POI: King St 33%, Welsh Back 12%
+    "4461": "Park Row",                   # POI: Park Row 48%
+    # Aberdeen — POI address data + aberdeen.gov.uk
+    "213":  "Belmont Street",             # POI: Union St 14% but 494 is Union St. str2=Belmont St
+    "260":  "Holburn Street",             # POI: Holburn St 28%
+    "494":  "Union Street",               # POI: Union St 31%
+    "576":  "George Street",              # POI: George St 63%
+    "975":  "Union Square",               # POI: Union Square 25%
+    "1030": "King Street",                # POI: King St 47%
+    "1670": "Rosemount",                  # POI: Rosemount Viaduct 54%. Neighbourhood name cleaner
+    # Norwich — POI address data + cathedralquarternorwich.co.uk
+    "103":  "The Lanes",                  # POI: London St 10%. Well-known Norwich brand
+    "386":  "Prince of Wales Road",       # POI: Prince of Wales Rd 20%, Tombland 10%
+    "387":  "Castle Mall",                # POI: Castle Mall 14%
+    "658":  "St Stephens Street",         # POI: St Stephens St 18%
+    "958":  "Magdalen Street",            # POI: Magdalen St 65%
+    "2241": "St Benedicts Street",        # POI: St Benedicts St 67%
+    # Leicester — POI address data + visitleicester.info
+    "82":   "Highcross",                  # POI dispersed (9%). Major shopping centre
+    "418":  "Granby Street",              # POI: Granby St 34%
+    "597":  "Market Street",              # POI: Market St 18%, Belvoir St 13%
+    "623":  "Humberstone Gate",           # POI: Humberstone Gate 20%
+    "1594": "Belgrave Gate",              # POI: Belgrave Gate 28%
+    "3941": "Abbey Street",               # POI: Abbey St 41%
+    # York — POI address data
+    "29":   "City Centre",                # POI dispersed (6%). Dominant sub-area
+    "620":  "Micklegate",                 # POI: Micklegate 35%
+    "1004": "Gillygate",                  # POI: Gillygate 51%, Bootham 18%
+    "1324": "Walmgate",                   # POI: Walmgate 54%
+    "1657": "Goodramgate",                # POI: Goodramgate 71%
+    # Bath — POI address data + visitbath.co.uk
+    "88":   "Milsom Street & Westgate Street",  # POI: Milsom St 7%, Westgate St 7%
+    "277":  "Walcot Street",              # POI: Walcot St 19%
+    "317":  "Southgate",                  # POI dispersed (6%). Shopping centre name
+    "2612": "Green Park Station",         # POI: Green Park Station 35%
+    # Sheffield — POI address data + sheffieldcitycentre.com
+    "148":  "Fargate & Cathedral Quarter",  # POI: High St 6%, Fargate 5%. Blend street + quarter
+    "476":  "Division Street",            # POI: Pinstone St 12%, Division St 8%
+    "432":  "The Moor",                   # POI: The Moor 34%
+    "389":  "West Street & Devonshire Street",  # POI: West St 23%, Devonshire St 22%
+    "2096": "The Wicker",                 # POI: Wicker 54%
+}
+
+
 # ─── Shopping Outlets (hardcoded from R code) ─────────────────────────
 SHOPPING_OUTLETS = [
     ("Regional Shopping Centre", "Westfield London", 51.50769, -0.22088),
@@ -85,7 +599,7 @@ def load_data():
     rc["RC_ID"] = rc["RC_ID"].astype(str)
 
     lookups = {}
-    for name in ["RC_Naming_ONS", "RC_Naming_OS", "RC_Naming_OS_Internal", "RC_Naming_Streets", "RC_Naming_OSM_RetailParks"]:
+    for name in ["RC_Naming_ONS", "RC_Naming_OS", "RC_Naming_OS_Internal", "RC_Naming_Streets", "RC_Naming_OSM_RetailParks", "RC_Naming_OSM_Neighbourhoods"]:
         path = os.path.join(EXPORTS_DIR, f"{name}.csv")
         if os.path.exists(path):
             df = pd.read_csv(path, dtype={"RC_ID": str})
@@ -176,6 +690,7 @@ def generate_names():
     os_internal = lookups["RC_Naming_OS_Internal"]
     streets = lookups["RC_Naming_Streets"]
     osm_rp = lookups["RC_Naming_OSM_RetailParks"]
+    osm_nbhd = lookups["RC_Naming_OSM_Neighbourhoods"]
 
     # ─── Classification: use what's in the gpkg ────────────────────
     print("\n=== 2a. Classification ===")
@@ -267,6 +782,37 @@ def generate_names():
         has_inner = merged["inner"].notna()
         merged.loc[has_inner, "nearest"] = merged.loc[has_inner, "inner"]
         level2["nearest"] = merged["nearest"]
+
+    # OSM neighbourhood/quarter names — fallback where OS internal has no match
+    if "OSM_NbhdName" in osm_nbhd.columns:
+        osm_matched = osm_nbhd[osm_nbhd["OSM_NbhdName"].notna()].copy()
+        osm_count = 0
+        for _, row in osm_matched.iterrows():
+            mask = level2["RC_ID"] == row["RC_ID"]
+            if not mask.any():
+                continue
+            # Only use OSM name where OS internal didn't provide one
+            current = level2.loc[mask, "nearest"].iloc[0]
+            os_row = os_internal[os_internal["RC_ID"] == row["RC_ID"]]
+            has_os_internal = False
+            if len(os_row) > 0:
+                for ptype in ["City", "Village", "Town", "Suburban", "Settlement", "Hamlet"]:
+                    if ptype in os_row.columns:
+                        v = os_row.iloc[0].get(ptype)
+                        if pd.notna(v) and str(v).strip():
+                            has_os_internal = True
+                            break
+            if not has_os_internal:
+                level2.loc[mask, "nearest"] = row["OSM_NbhdName"]
+                osm_count += 1
+        print(f"  OSM neighbourhood fallback applied: {osm_count} centres")
+
+    # Manual neighbourhood overrides (fix junk OS Settlement names)
+    NEIGHBOURHOOD_OVERRIDES = {
+        "2126": "Paternoster Row",  # was "Orchard Square" (a named courtyard in Sheffield)
+    }
+    for rc_id, name in NEIGHBOURHOOD_OVERRIDES.items():
+        level2.loc[level2["RC_ID"] == rc_id, "nearest"] = name
 
     # NI centres: OS Open Names doesn't cover NI. Use settlement name
     # for large centres (like OS City/Town), SDZ for smaller ones (like
@@ -489,22 +1035,63 @@ def generate_names():
         region = naming.loc[primary_mask, "RegionNM"].iloc[0]
         country = naming.loc[primary_mask, "Country"].iloc[0]
 
-        # London sub-areas: use "London" as LA, not individual boroughs
-        if city_name == "London":
+        # Determine if this is a London group
+        is_london = (city_name == "London" or region == "London")
+        if is_london:
             la = "London"
+            city_name = "London"
 
-        # Each sub-area already has a pipeline name; take its first component
-        # and rebuild as: first_part - CityName; LA (Region; Country)
+        # London: include OS Settlement name for context, UNLESS the group
+        # contains a Regional Centre (i.e. the big central London group)
+        group_classes = set(
+            naming.loc[naming["RC_ID"].isin(member_ids), "Classification"].dropna()
+        )
+        london_show_settlement = is_london and "Regional Centre" not in group_classes
+
         for mid in member_ids:
             mask = naming["RC_ID"] == mid
             if not mask.any():
                 continue
 
-            existing_name = naming.loc[mask, "RC_Name"].iloc[0]
-            if city_name:
-                first_part = existing_name.split(";", 1)[0].strip()
+            manual_names = {
+                "v1": MANUAL_SUBAREA_NAMES_V1,
+                "v2": MANUAL_SUBAREA_NAMES_V2,
+                "v3": MANUAL_SUBAREA_NAMES_V3,
+                "v4": MANUAL_SUBAREA_NAMES_V4,
+            }.get(MANUAL_SUBAREA_VERSION, {})
+            if mid in manual_names:
+                local_name = manual_names[mid]
+            else:
+                existing_name = naming.loc[mask, "RC_Name"].iloc[0]
+                local_name = existing_name.split(";", 1)[0].strip()
+
+            if not city_name:
+                continue
+
+            if is_london:
+                if london_show_settlement:
+                    # e.g. "Upper Street (Islington); London (London; England)"
+                    settlement = None
+                    os_row = os_nearest[os_nearest["RC_ID"] == mid]
+                    if len(os_row) > 0 and "Settlement" in os_row.columns:
+                        s = os_row.iloc[0]["Settlement"]
+                        if pd.notna(s):
+                            settlement = str(s).split(";")[0].strip()
+                    if settlement:
+                        nbhd = f"{local_name} ({settlement})"
+                    else:
+                        nbhd = local_name
+                else:
+                    # e.g. "Mayfair; London (London; England)"
+                    nbhd = local_name
                 naming.loc[mask, "RC_Name"] = assemble_name_components(
-                    [None, f"{first_part} - {city_name}", la, region, country]
+                    [None, nbhd, "London", "London", "England"]
+                )
+            else:
+                # e.g. "Northern Quarter (Manchester City Centre); Manchester (North West; England)"
+                nbhd = f"{local_name} ({city_name} City Centre)"
+                naming.loc[mask, "RC_Name"] = assemble_name_components(
+                    [None, nbhd, la, region, country]
                 )
 
     # ─── Cleanup ──────────────────────────────────────────────────

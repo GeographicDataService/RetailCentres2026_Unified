@@ -837,6 +837,209 @@ def generate_street_naming(rc):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# 1f. Address Component Naming — unfiltered top address parts
+# ═══════════════════════════════════════════════════════════════════════
+
+def _extract_address_parts(address):
+    """Extract all meaningful parts of a Foursquare address.
+    Splits on comma, strips house/unit numbers from each part.
+    Returns list of cleaned parts (may be empty).
+    """
+    if pd.isna(address) or not str(address).strip():
+        return []
+    import re
+    results = []
+    for part in str(address).split(","):
+        part = part.strip()
+        # Strip leading unit/house numbers
+        part = re.sub(r"^(Unit\s+\d+\s*[-/]?\s*\d*\s*)", "", part, flags=re.IGNORECASE).strip()
+        part = re.sub(r"^\d+\s*[-/]\s*\d+\s*", "", part).strip()
+        part = re.sub(r"^\d+[a-zA-Z]?\s+", "", part).strip()
+        # Skip postcodes
+        if re.match(r"^[A-Z]{1,2}\d", part, re.IGNORECASE):
+            continue
+        if part and len(part) > 2:
+            results.append(part)
+    return results
+
+
+def _normalise_address_component(name):
+    """Normalise an address component for grouping.
+    Expands street abbreviations and title-cases for case-insensitive merging.
+    """
+    if not name:
+        return name
+    normed = normalise_street_name(name)
+    # Title-case so 'Liverpool ONE' and 'Liverpool One' merge
+    return normed.title() if normed else normed
+
+
+def generate_address_component_naming(rc):
+    """
+    Address component naming: extract the most common address component
+    per centre from Foursquare POIs, without requiring a street suffix.
+    Picks up place names like 'The Moor', 'Liverpool One', 'Arndale Centre'.
+    """
+    print("\n=== 1f. Address Component Naming (Foursquare) ===")
+
+    print("  Loading Foursquare POI data...")
+    fsq = gpd.read_parquet(FSQ_PATH)
+    fsq = fsq.to_crs(CRS_BNG)
+
+    # Spatial join
+    print("  Spatial join POIs to centres...")
+    joined = gpd.sjoin(
+        fsq[["address", "locality", "geometry"]],
+        rc[["RC_ID", "geometry"]],
+        how="inner", predicate="within",
+    )
+    print(f"  {len(joined)} POIs matched to centres")
+
+    # Build city-level name to exclude per centre
+    # Use only the most common locality value (the city name itself),
+    # not all locality values — rare ones like "Liverpool One" are useful
+    print("  Building exclusion set from top locality values...")
+    locality_per_rc = {}
+    loc_counts = (
+        joined[joined["locality"].notna()]
+        .groupby(["RC_ID", "locality"])
+        .size()
+        .reset_index(name="n")
+        .sort_values(["RC_ID", "n"], ascending=[True, False])
+    )
+    for rc_id, group in loc_counts.groupby("RC_ID"):
+        top_loc = group.iloc[0]["locality"].strip().lower()
+        locality_per_rc[rc_id] = {top_loc}
+
+    # Extract all address parts (each POI can contribute multiple parts)
+    print("  Extracting address components...")
+    joined["addr_parts"] = joined["address"].apply(_extract_address_parts)
+    joined = joined[joined["addr_parts"].apply(len) > 0].copy()
+    joined = joined.explode("addr_parts").rename(columns={"addr_parts": "addr_part"})
+
+    # Normalise for grouping (case-insensitive + abbreviation expansion)
+    joined["addr_norm"] = joined["addr_part"].apply(_normalise_address_component)
+    joined = joined[joined["addr_norm"].notna() & (joined["addr_norm"].str.strip() != "")].copy()
+
+    # Exclude city-level names
+    def _is_excluded(row):
+        excl = locality_per_rc.get(row["RC_ID"], set())
+        return row["addr_norm"].strip().lower() in excl
+
+    joined = joined[~joined.apply(_is_excluded, axis=1)].copy()
+    print(f"  {len(joined)} address components after exclusions")
+
+    # Count by normalised form, but keep the most common original spelling
+    print("  Computing frequencies...")
+    counts = (
+        joined.groupby(["RC_ID", "addr_norm", "addr_part"])
+        .size()
+        .reset_index(name="n")
+    )
+    # Sum counts per normalised form, keep spelling with highest count
+    norm_totals = counts.groupby(["RC_ID", "addr_norm"])["n"].sum().reset_index(name="n_total")
+    best_spelling = counts.sort_values("n", ascending=False).groupby(["RC_ID", "addr_norm"]).first().reset_index()
+    merged = norm_totals.merge(
+        best_spelling[["RC_ID", "addr_norm", "addr_part"]],
+        on=["RC_ID", "addr_norm"],
+    )
+
+    # Compute proportion relative to total POIs with address per centre
+    poi_totals = joined.groupby("RC_ID").size().rename("total")
+    merged = merged.merge(poi_totals, on="RC_ID")
+    merged["freq"] = merged["n_total"] / merged["total"]
+    merged = merged.sort_values(["RC_ID", "freq"], ascending=[True, False])
+
+    # Keep top 2 per centre
+    merged["rank"] = merged.groupby("RC_ID").cumcount() + 1
+    top2 = merged[merged["rank"] <= 2].copy()
+
+    # Pivot to wide
+    result_rows = []
+    for rc_id, group in top2.groupby("RC_ID"):
+        row = {"RC_ID": rc_id}
+        for _, r in group.iterrows():
+            rank = int(r["rank"])
+            if rank == 1:
+                row["Addr_1"] = r["addr_part"]
+                row["Addr_1_Norm"] = r["addr_norm"]
+                row["Addr_1_P"] = r["freq"]
+            elif rank == 2:
+                row["Addr_2"] = r["addr_part"]
+                row["Addr_2_Norm"] = r["addr_norm"]
+                row["Addr_2_P"] = r["freq"]
+        result_rows.append(row)
+
+    result = pd.DataFrame(result_rows)
+    all_rc = rc[["RC_ID"]].copy()
+    result = all_rc.merge(result, on="RC_ID", how="left")
+
+    n_with = result["Addr_1"].notna().sum()
+    print(f"  Address components assigned: {n_with} / {len(result)} centres")
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 1g. OSM Neighbourhood/Quarter Names
+# ═══════════════════════════════════════════════════════════════════════
+
+OSM_NBHD_PATH = os.path.join(DATA_DIR, "osm_neighbourhoods.parquet")
+
+
+def generate_osm_neighbourhood_names(rc):
+    """
+    OSM neighbourhood naming: match OSM place=neighbourhood/quarter nodes
+    to retail centres within a 100m buffer. If multiple matches per centre,
+    keep the nearest to centroid.
+    """
+    print("\n=== 1g. OSM Neighbourhood Naming ===")
+
+    if not os.path.exists(OSM_NBHD_PATH):
+        print("  WARNING: OSM neighbourhoods not found")
+        return pd.DataFrame({"RC_ID": rc["RC_ID"]})
+
+    osm = gpd.read_parquet(OSM_NBHD_PATH).to_crs(CRS_BNG)
+    print(f"  Loaded {len(osm)} OSM neighbourhood/quarter nodes")
+
+    # Buffer centres by 100m
+    rc_buf = rc[["RC_ID", "geometry"]].copy()
+    rc_buf["geometry"] = rc_buf.geometry.buffer(100)
+
+    # Spatial join
+    joined = gpd.sjoin(osm, rc_buf, how="inner", predicate="within")
+    if len(joined) == 0:
+        print("  No OSM neighbourhood matches found")
+        return pd.DataFrame({"RC_ID": rc["RC_ID"]})
+
+    print(f"  {len(joined)} nodes matched to {joined['RC_ID'].nunique()} centres")
+
+    # Distance to centroid for deduplication
+    centroids = rc.set_index("RC_ID").geometry.centroid
+    joined["centroid_dist"] = joined.apply(
+        lambda row: row.geometry.distance(centroids[row["RC_ID"]])
+        if row["RC_ID"] in centroids.index else np.inf,
+        axis=1,
+    )
+
+    # Keep nearest to centroid per centre
+    best = joined.sort_values("centroid_dist").groupby("RC_ID").first().reset_index()
+
+    result = rc[["RC_ID"]].copy()
+    result = result.merge(
+        best[["RC_ID", "name", "place_type", "centroid_dist"]].rename(
+            columns={"name": "OSM_NbhdName", "place_type": "OSM_NbhdType",
+                      "centroid_dist": "OSM_NbhdDist"}
+        ),
+        on="RC_ID", how="left",
+    )
+
+    n_matched = result["OSM_NbhdName"].notna().sum()
+    print(f"  OSM neighbourhood names assigned: {n_matched}")
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -877,6 +1080,18 @@ def main():
     osm_rp_path = os.path.join(EXPORTS_DIR, "RC_Naming_OSM_RetailParks.csv")
     osm_rp.to_csv(osm_rp_path, index=False)
     print(f"  Saved: {osm_rp_path} ({len(osm_rp)} rows)")
+
+    # 1f. Address Component Naming
+    addr_comp = generate_address_component_naming(rc)
+    addr_path = os.path.join(EXPORTS_DIR, "RC_Naming_AddressComponents.csv")
+    addr_comp.to_csv(addr_path, index=False)
+    print(f"  Saved: {addr_path} ({len(addr_comp)} rows)")
+
+    # 1g. OSM Neighbourhood Names
+    osm_nbhd = generate_osm_neighbourhood_names(rc)
+    osm_nbhd_path = os.path.join(EXPORTS_DIR, "RC_Naming_OSM_Neighbourhoods.csv")
+    osm_nbhd.to_csv(osm_nbhd_path, index=False)
+    print(f"  Saved: {osm_nbhd_path} ({len(osm_nbhd)} rows)")
 
     print("\n=== Naming lookup generation complete ===")
 
