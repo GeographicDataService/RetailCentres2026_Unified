@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
-GPKG_PATH = os.path.join(BASE_DIR, "rc2025_foursquare_ignoreCounty.gpkg")
+GPKG_PATH = os.path.join(BASE_DIR, "rc2025_foursquare_LondonMannual.gpkg")
 CRS_BNG = "EPSG:27700"
 
 # ─── Sub-area manual names ────────────────────────────────────────────
@@ -466,7 +466,7 @@ MANUAL_SUBAREA_NAMES_V4 = {
     # Liverpool — POI address data + visitliverpool.com
     "97":   "Liverpool ONE & Cavern Quarter",  # POI: Lord St 8%, Mathew St, Paradise St 7%
     "90":   "Bold Street & Ropewalks",    # POI: Bold St 23%
-    "288":  "Commercial District",        # POI: Castle St 11%, Old Hall St 7%
+    "288":  "Commercial District & Pride Quarter",  # POI: Castle St 11%, Old Hall St 7%. OSM=Pride Quarter
     "193":  "Church Street & St John's",   # POI: Church St, Ranelagh St, St John's Shopping Centre, Clayton Square
     "548":  "Hope Street & Georgian Quarter",  # POI: Rodney St 27%, Hope St 16%
     # Birmingham — POI address data + birmingham.gov.uk BIDs
@@ -534,7 +534,7 @@ MANUAL_SUBAREA_NAMES_V4 = {
     "148":  "Fargate & Cathedral Quarter",  # POI: High St 6%, Fargate 5%. Blend street + quarter
     "476":  "Division Street",            # POI: Pinstone St 12%, Division St 8%
     "432":  "The Moor",                   # POI: The Moor 34%
-    "389":  "West Street & Devonshire Street",  # POI: West St 23%, Devonshire St 22%
+    "389":  "West Street & Devonshire Quarter",  # POI: West St 23%, Devonshire St 22%. OSM=Devonshire Quarter
     "2096": "The Wicker",                 # POI: Wicker 54%
 }
 
@@ -814,42 +814,9 @@ def generate_names():
     for rc_id, name in NEIGHBOURHOOD_OVERRIDES.items():
         level2.loc[level2["RC_ID"] == rc_id, "nearest"] = name
 
-    # NI centres: OS Open Names doesn't cover NI. Use settlement name
-    # for large centres (like OS City/Town), SDZ for smaller ones (like
-    # OS Suburban/Village). Fallback to whichever is available.
-    ni_ids = rc.loc[rc["RegionName"].isin(["NI", "Northern Ireland"]), "RC_ID"].tolist()
-    large_classes = {"Regional Centre", "Major Town Centre", "Town Centre"}
-    if ni_ids:
-        # Clear OS-derived names for NI centres
-        level2.loc[level2["RC_ID"].isin(ni_ids), "nearest"] = None
-
-        for rc_id in ni_ids:
-            cls = rc.loc[rc["RC_ID"] == rc_id, "Classification"]
-            is_large = len(cls) > 0 and cls.iloc[0] in large_classes
-            name = None
-
-            # Primary source based on size
-            if is_large and "CityNM_1" in ons.columns:
-                city = ons.loc[ons["RC_ID"] == rc_id, "CityNM_1"]
-                if len(city) > 0 and pd.notna(city.iloc[0]) and str(city.iloc[0]).strip():
-                    name = str(city.iloc[0]).strip().title()
-            elif not is_large and "NbhdNM_1" in ons.columns:
-                nbhd = ons.loc[ons["RC_ID"] == rc_id, "NbhdNM_1"]
-                if len(nbhd) > 0 and pd.notna(nbhd.iloc[0]):
-                    name = re.sub(r"_[A-Z]$|_*\d+", "", str(nbhd.iloc[0])).replace("_", " ").strip()
-
-            # Fallback to the other source
-            if name is None and "CityNM_1" in ons.columns:
-                city = ons.loc[ons["RC_ID"] == rc_id, "CityNM_1"]
-                if len(city) > 0 and pd.notna(city.iloc[0]) and str(city.iloc[0]).strip():
-                    name = str(city.iloc[0]).strip().title()
-            if name is None and "NbhdNM_1" in ons.columns:
-                nbhd = ons.loc[ons["RC_ID"] == rc_id, "NbhdNM_1"]
-                if len(nbhd) > 0 and pd.notna(nbhd.iloc[0]):
-                    name = re.sub(r"_[A-Z]$|_*\d+", "", str(nbhd.iloc[0])).replace("_", " ").strip()
-
-            if name:
-                level2.loc[level2["RC_ID"] == rc_id, "nearest"] = name
+    # NI centres: OS Open Names doesn't cover NI, but OSM place nodes
+    # (city/town/village/suburb/hamlet) are now merged into the OS data.
+    # NI now follows the same nearest/internal logic as GB — no special handling needed.
 
     # ─── Merge and assemble final names ────────────────────────────
     print("  Assembling final names...")
@@ -1128,15 +1095,20 @@ def generate_names():
     os.makedirs(EXPORTS_DIR, exist_ok=True)
 
     # CSV lookup
-    csv_cols = ["RC_ID", "Street", "Neighbourhood", "LocalAuthorityNM_1",
-                "RegionNM", "Country", "RC_Name", "Classification"]
+    csv_cols = ["RC_ID", "RC_Name", "Classification", "Street", "Neighbourhood",
+                "LocalAuthorityNM_1", "RegionNM", "Country"]
     csv_out = naming[[c for c in csv_cols if c in naming.columns]].copy()
     csv_path = os.path.join(EXPORTS_DIR, "rc2025_naming_lookup.csv")
     csv_out.to_csv(csv_path, index=False)
     print(f"  Saved: {csv_path}")
 
     # GeoPackage
-    rc_named = rc.merge(naming[["RC_ID", "RC_Name"]], on="RC_ID", how="left")
+    rc_named = rc.merge(naming[["RC_ID", "RC_Name", "Classification"]], on="RC_ID", how="left", suffixes=("", "_new"))
+    if "Classification_new" in rc_named.columns:
+        rc_named = rc_named.drop(columns=["Classification"]).rename(columns={"Classification_new": "Classification"})
+    priority = ["RC_ID", "RC_Name", "Classification"]
+    other_cols = [c for c in rc_named.columns if c not in priority]
+    rc_named = rc_named[priority + other_cols]
     gpkg_path = os.path.join(EXPORTS_DIR, "rc2025_named.gpkg")
     rc_named.to_file(gpkg_path, driver="GPKG")
     print(f"  Saved: {gpkg_path}")

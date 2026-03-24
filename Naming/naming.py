@@ -25,9 +25,10 @@ warnings.filterwarnings("ignore", category=UserWarning)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
-GPKG_PATH = os.path.join(BASE_DIR, "rc2025_foursquare_ignoreCounty.gpkg")
+GPKG_PATH = os.path.join(BASE_DIR, "rc2025_foursquare_LondonMannual.gpkg")
 FSQ_PATH = os.path.join(BASE_DIR, "foursquare_quality_retail_filtered.parquet")
 OSM_LANDUSE_PATH = os.path.join(DATA_DIR, "retail_landuse.parquet")
+OSM_NI_PLACES_PATH = os.path.join(DATA_DIR, "osm_ni_places.parquet")
 
 CRS_BNG = "EPSG:27700"
 PREFER_ENGLISH_NAMES = True  # Use English place names instead of Gaelic/Welsh where available
@@ -117,7 +118,10 @@ def load_lad_boundaries():
 
 
 def load_bua_boundaries():
-    """Load Built-Up Area + Scottish Localities + NI Settlements."""
+    """Load Built-Up Area + Scottish Localities + NI Settlements.
+    NOTE: Not currently used in the pipeline — NI now uses OSM places
+    and GB uses OS Open Names directly. Kept for potential future use.
+    """
     parts = []
 
     # England/Wales/Scotland BUA
@@ -374,6 +378,41 @@ def load_os_open_names(prefer_english=True):
         crs=CRS_BNG,
     )
     return open_names
+
+
+def load_osm_ni_places():
+    """Load OSM place nodes for NI (city/town/village/suburb/hamlet).
+    OS Open Names doesn't cover NI, so OSM provides equivalent place data.
+    Returns a GeoDataFrame matching the OS Open Names schema.
+    """
+    if not os.path.exists(OSM_NI_PLACES_PATH):
+        print("  WARNING: OSM NI places not found — run Overpass download")
+        return None
+
+    print(f"  Loading OSM NI places...")
+    osm = gpd.read_parquet(OSM_NI_PLACES_PATH).to_crs(CRS_BNG)
+
+    # Filter out Republic of Ireland places that crept in via bbox
+    osm = osm[(osm.geometry.x > 0) & (osm.geometry.y > 460000)].copy()
+
+    # Map OSM place types to OS Open Names LOCAL_TYPE
+    type_map = {
+        "city": "City",
+        "town": "Town",
+        "village": "Village",
+        "suburb": "Suburban Area",
+        "hamlet": "Hamlet",
+    }
+    osm["LOCAL_TYPE"] = osm["place_type"].map(type_map)
+    osm = osm[osm["LOCAL_TYPE"].notna()].copy()
+
+    # Match OS Open Names schema
+    osm = osm.rename(columns={"name": "NAME1"})
+    osm["TYPE"] = "populatedPlace"
+
+    osm = osm[["NAME1", "TYPE", "LOCAL_TYPE", "geometry"]]
+    print(f"  Loaded {len(osm)} NI place names (OSM)")
+    return osm
 
 
 PLACE_TYPES = ["City", "Town", "Village", "Suburban Area", "Other Settlement", "Hamlet"]
@@ -1056,6 +1095,14 @@ def main():
 
     # Load OS Open Names (shared between 1b and 1c)
     open_names = load_os_open_names(prefer_english=PREFER_ENGLISH_NAMES)
+
+    # Supplement with OSM NI places (OS Open Names doesn't cover NI)
+    osm_ni = load_osm_ni_places()
+    if osm_ni is not None:
+        if open_names is not None:
+            open_names = pd.concat([open_names, osm_ni], ignore_index=True)
+        else:
+            open_names = osm_ni
 
     # 1b. OS Nearest
     os_nearest = generate_os_nearest(rc, open_names)
