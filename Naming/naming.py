@@ -25,8 +25,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
-GPKG_PATH = os.path.join(BASE_DIR, "rc2025_foursquare_LondonMannual.gpkg")
-FSQ_PATH = os.path.join(BASE_DIR, "foursquare_quality_retail_filtered.parquet")
+GPKG_PATH = os.path.join(DATA_DIR, "rc2025_foursquare_LondonMannual.gpkg")
+FSQ_PATH = os.path.join(DATA_DIR, "foursquare_quality_retail_filtered.parquet")
 OSM_LANDUSE_PATH = os.path.join(DATA_DIR, "retail_landuse.parquet")
 OSM_NI_PLACES_PATH = os.path.join(DATA_DIR, "osm_ni_places.parquet")
 
@@ -116,67 +116,6 @@ def load_lad_boundaries():
     print("  WARNING: LAD boundaries not found")
     return None
 
-
-def load_bua_boundaries():
-    """Load Built-Up Area + Scottish Localities + NI Settlements.
-    NOTE: Not currently used in the pipeline — NI now uses OSM places
-    and GB uses OS Open Names directly. Kept for potential future use.
-    """
-    parts = []
-
-    # England/Wales/Scotland BUA
-    bua_path = os.path.join(DATA_DIR, "BUA_Dec2022_EW.gpkg")
-    if os.path.exists(bua_path):
-        print("  Loading BUA (GB)...")
-        bua = gpd.read_file(bua_path)
-        bua = bua.rename(columns={"BUA22CD": "CityCD", "BUA22NM": "CityNM"})
-        bua["CityTY"] = "BUA22CD"
-        parts.append(bua[["CityCD", "CityNM", "CityTY", "geometry"]])
-
-    # Scottish Localities
-    scot_dir = os.path.join(DATA_DIR, "scotland")
-    scot_locs = glob.glob(os.path.join(scot_dir, "**/*Localit*.*"), recursive=True)
-    scot_locs = [f for f in scot_locs if f.endswith((".shp", ".gpkg", ".geojson"))]
-    if scot_locs:
-        print(f"  Loading Scottish Localities from {scot_locs[0]}...")
-        sl = gpd.read_file(scot_locs[0])
-        # Columns vary by version; look for code/name patterns
-        for c in sl.columns:
-            if c.lower() in ("code", "lc_id", "loc_code"):
-                sl = sl.rename(columns={c: "CityCD"})
-            if c.lower() in ("name", "lc_name", "loc_name"):
-                sl = sl.rename(columns={c: "CityNM"})
-        if "CityCD" not in sl.columns:
-            sl["CityCD"] = sl.index.astype(str)
-        if "CityNM" not in sl.columns and "Name" in sl.columns:
-            sl = sl.rename(columns={"Name": "CityNM"})
-        sl["CityTY"] = "Localities20CD"
-        parts.append(sl[["CityCD", "CityNM", "CityTY", "geometry"]])
-
-    # NI Settlements
-    ni_dir = os.path.join(DATA_DIR, "northern_ireland")
-    ni_sett = glob.glob(os.path.join(ni_dir, "*ettlement*.*"))
-    ni_sett = [f for f in ni_sett if f.endswith((".shp", ".gpkg", ".geojson", ".json"))]
-    if ni_sett:
-        print(f"  Loading NI Settlements from {ni_sett[0]}...")
-        ns = gpd.read_file(ni_sett[0])
-        # File CRS metadata may be wrong (e.g. says 4326 but coords are Irish Grid)
-        # Detect by checking if coordinates are in Irish Grid range
-        bounds = ns.total_bounds
-        if bounds[0] > 10000 and bounds[2] < 400000 and bounds[1] > 300000 and bounds[3] < 500000:
-            ns = ns.set_crs(29903, allow_override=True)
-        ns["geometry"] = ns["geometry"].make_valid()
-        # Known columns: Code, Name
-        ns = ns.rename(columns={"Code": "CityCD", "Name": "CityNM"})
-        ns["CityTY"] = "Settlements15CD"
-        parts.append(ns[["CityCD", "CityNM", "CityTY", "geometry"]])
-
-    if parts:
-        # Ensure all parts in same CRS before concat
-        parts = [p.to_crs(CRS_BNG) if p.crs != CRS_BNG else p for p in parts]
-        return pd.concat(parts, ignore_index=True)
-    print("  WARNING: No BUA/City boundaries found")
-    return None
 
 
 def load_neighbourhood_boundaries():
@@ -282,24 +221,6 @@ def generate_ons_naming(rc):
             print("  No neighbourhood intersections found")
     else:
         print("  Skipping neighbourhood (no boundary data)")
-
-    # City/BUA — spatial intersection if data available
-    bua = load_bua_boundaries()
-    if bua is not None:
-        city_int = intersect_with_proportions(
-            rc, bua, bnd_code_col="CityCD", bnd_name_col="CityNM",
-            max_ranks=2, threshold=0.1
-        )
-        if len(city_int) > 0:
-            city_wide = pivot_ranked(city_int, "RC_ID", "CityCD", "CityNM", "City", max_ranks=2)
-            city_types = bua.drop_duplicates("CityCD")[["CityCD", "CityTY"]]
-            city_wide = city_wide.merge(city_types, left_on="CityCD_1", right_on="CityCD", how="left")
-            city_wide = city_wide.drop(columns=["CityCD"], errors="ignore")
-            result = result.merge(city_wide, on="RC_ID", how="left")
-        else:
-            print("  No city/BUA intersections found")
-    else:
-        print("  Skipping City/BUA (no boundary data)")
 
     return result
 

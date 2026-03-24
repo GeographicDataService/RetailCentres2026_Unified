@@ -21,8 +21,9 @@ import geopandas as gpd
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
 EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
-GPKG_PATH = os.path.join(BASE_DIR, "rc2025_foursquare_LondonMannual.gpkg")
+GPKG_PATH = os.path.join(DATA_DIR, "rc2025_foursquare_LondonMannual.gpkg")
 CRS_BNG = "EPSG:27700"
 
 # ─── Sub-area manual names ────────────────────────────────────────────

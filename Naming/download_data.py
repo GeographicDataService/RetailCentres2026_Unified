@@ -28,28 +28,10 @@ DATASETS = {
         "filename": "LAD_Dec2024_UK.gpkg",
         "subfolder": "",
     },
-    "bua_boundaries": {
-        "description": "Built-Up Areas (Dec 2022) GB",
-        "url": "https://open-geography-portalx-ons.hub.arcgis.com/api/download/v1/items/ad30b234308f4b02b4bb9b0f4766f7bb/geoPackage?layers=0",
-        "filename": "BUA_Dec2022_EW.gpkg",
-        "subfolder": "",
-    },
     "msoa_boundaries": {
         "description": "MSOA (Dec 2021) England & Wales BGC V3",
         "url": "https://open-geography-portalx-ons.hub.arcgis.com/api/download/v1/items/6b282db29762450881ed5159259a6e4e/geoPackage?layers=0",
         "filename": "MSOA_Dec2021_EW.gpkg",
-        "subfolder": "",
-    },
-    "lad_to_region": {
-        "description": "LAD to Region lookup (Dec 2024)",
-        "url": "https://open-geography-portalx-ons.hub.arcgis.com/api/download/v1/items/3959874c514b470e9dd160acdc00c97a/csv?layers=0",
-        "filename": "LAD_to_Region_Dec2024.csv",
-        "subfolder": "",
-    },
-    "lad_to_county": {
-        "description": "LAD to County/UA lookup (Dec 2024)",
-        "url": "https://open-geography-portalx-ons.hub.arcgis.com/api/download/v1/items/1b80e7fe67e34cf5b084ba23700d7974/csv?layers=0",
-        "filename": "LAD_to_County_Dec2024.csv",
         "subfolder": "",
     },
     # ── Scotland ──
@@ -60,13 +42,6 @@ DATASETS = {
         "subfolder": "scotland",
         "is_zip": True,
     },
-    "scottish_localities": {
-        "description": "Scottish Localities (2020)",
-        "url": "https://maps.gov.scot/ATOM/shapefiles/SG_Localities_2020.zip",
-        "filename": "SG_Localities_2020.zip",
-        "subfolder": "scotland",
-        "is_zip": True,
-    },
     # ── Northern Ireland ──
     "ni_soa": {
         "description": "NI Super Output Areas (2011)",
@@ -74,12 +49,6 @@ DATASETS = {
         "filename": "NI_SOA2011.zip",
         "subfolder": "northern_ireland",
         "is_zip": True,
-    },
-    "ni_settlements": {
-        "description": "NI Settlements (2015)",
-        "url": "https://admin.opendatani.gov.uk/dataset/e3757f15-4833-496f-882a-8968c98f3cb4/resource/a1daf6e3-83da-4729-b444-84c7cfca18cc/download/settlements-2015.json",
-        "filename": "NI_Settlements_2015.geojson",
-        "subfolder": "northern_ireland",
     },
 }
 
@@ -94,16 +63,6 @@ MANUAL_DATASETS = {
             "   and data/os_open_names/DOC/ contains the header file"
         ),
         "check_path": os.path.join(DATA_DIR, "os_open_names", "DATA"),
-    },
-    "boundary_line_counties": {
-        "description": "OS Boundary-Line Ceremonial Counties",
-        "instructions": (
-            "1. Go to https://osdatahub.os.uk/downloads/open/BoundaryLine\n"
-            "2. Download the GeoPackage format\n"
-            "3. Extract and copy the ceremonial counties layer to data/boundary_line_counties.gpkg\n"
-            "   (or the full Boundary-Line gpkg to data/bdline_gb.gpkg)"
-        ),
-        "check_path": os.path.join(DATA_DIR, "bdline_gb.gpkg"),
     },
 }
 
