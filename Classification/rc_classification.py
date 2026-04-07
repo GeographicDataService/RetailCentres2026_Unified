@@ -193,6 +193,7 @@ def apply_manual_edits(
         "28": "Regional Centre", # glasgow
         "5830": "Small Local Centre", # the one in the city of london at the barbican
         "3379": "Small Retail Park", # the gemini retail park
+        "1661": "Small Retail Park", # brighton marina
     }
 
     for rcid, cls in manual_classification_new.items():
