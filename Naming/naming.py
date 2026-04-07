@@ -1008,6 +1008,9 @@ def main():
 
     rc = load_retail_centres()
 
+    # Temporary centre_type override — will move to separate classification code
+    rc.loc[rc["RC_ID"] == "1661", "centre_type"] = "retail_park"
+
     # 1a. ONS Naming
     ons = generate_ons_naming(rc)
     ons_path = os.path.join(EXPORTS_DIR, "RC_Naming_ONS.csv")

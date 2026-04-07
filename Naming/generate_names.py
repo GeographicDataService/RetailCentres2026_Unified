@@ -708,6 +708,9 @@ def generate_names():
         if mask.any():
             classification.loc[mask, "Classification"] = row["SubType"]
 
+    # Temporary classification override — will move to separate classification code
+    classification.loc[classification["RC_ID"] == "1661", "Classification"] = "Large Retail Park"
+
     # ─── Level 1: Street Name ──────────────────────────────────────
     print("\n=== 2b. Name Assembly ===")
     print("  Level 1: Street names...")
@@ -810,7 +813,9 @@ def generate_names():
 
     # Manual neighbourhood overrides (fix junk OS Settlement names)
     NEIGHBOURHOOD_OVERRIDES = {
-        "2126": "Paternoster Row",  # was "Orchard Square" (a named courtyard in Sheffield)
+        "2126": "Paternoster Row",  # In sheff, it grabs orchard square automatically, despite being several hundred metres away
+        "666": "Kingswood",         # OS place >2km from centre
+        "1699": "Bromborough",      # OS Bebington place mislocated
     }
     for rc_id, name in NEIGHBOURHOOD_OVERRIDES.items():
         level2.loc[level2["RC_ID"] == rc_id, "nearest"] = name
