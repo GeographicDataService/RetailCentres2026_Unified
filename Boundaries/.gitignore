@@ -18,3 +18,5 @@ notebooks/bankpoicheck/data
 notebooks/defunct_removed_top10
 notebooks/data/
 notebooks/mappingoutputs/
+src/postcode_comparison/
+docs/

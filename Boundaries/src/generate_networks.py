@@ -321,12 +321,15 @@ def generate_networks(
         dissolved_combined = dissolved_gdf
         dissolved_combined['centre_type'] = 'centre'
 
-    # Rank by POI count
-    dissolved_combined["network_number"] = (
-        dissolved_combined[f"total_{source}_count"]
-        .rank(method="first", ascending=False)
-        .astype(int)
-    )
+    # Rank by POI count (deterministic: tiebreak by centroid easting then northing)
+    dissolved_combined["_centroid_x"] = dissolved_combined.geometry.centroid.x
+    dissolved_combined["_centroid_y"] = dissolved_combined.geometry.centroid.y
+    dissolved_combined = dissolved_combined.sort_values(
+        [f"total_{source}_count", "_centroid_x", "_centroid_y"],
+        ascending=[False, True, True],
+    ).reset_index(drop=True)
+    dissolved_combined["network_number"] = range(1, len(dissolved_combined) + 1)
+    dissolved_combined = dissolved_combined.drop(columns=["_centroid_x", "_centroid_y"])
     dissolved_combined = dissolved_combined.rename(
         columns={
             "network_number": "RC_ID",
@@ -334,6 +337,15 @@ def generate_networks(
             "trackNodes": "# H3 cells",
         }
     )
+
+    # ----------------------------------------
+    # Post-processing: merge centres that were incorrectly split
+    # e.g. Camden (RC_IDs 130+218) split by Leiden clustering
+    # ----------------------------------------
+    if centre_postprocessing.POST_MERGE_GROUPS:
+        dissolved_combined = centre_postprocessing.merge_centres(
+            dissolved_combined, centre_postprocessing.POST_MERGE_GROUPS
+        )
 
     dissolved_combined.to_parquet(f"{save_folder}/4_finalcentres.parquet")
 
