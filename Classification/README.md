@@ -60,7 +60,7 @@ Important config fields:
 
 - `rc_lookup.rc_path`
 - `rc_id_lookup.new_rc_path`
-- `rc_ldcN.rc_path`
+- `rc_classification_ldc_numbers_comparison.rc_path`
 - `rc_classification.split_path`
 - `rc_classification.retailN_col`
 - `rc_classification.london_town_centres_path`

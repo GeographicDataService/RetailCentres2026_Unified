@@ -2,8 +2,9 @@ from pathlib import Path
 
 from rc_id_lookup_build import build_rcid_lookup
 from rc_lookup import build_rc_lookups
-from rc_ldcN import build_ldc_retail_counts
+from rc_foursquare_anchors import build_foursquare_anchor_counts
 from rc_classification import run_classification
+from rc_classification_ldc_numbers_comparison import run_ldc_numbers_comparison
 
 
 def _load_json(path: Path) -> dict:
@@ -52,10 +53,11 @@ def main() -> None:
     build_rcid_lookup(**cfg["rc_id_lookup"])
     print("---1. RC_ID lookup between old and new RC_ID built.")
     build_rc_lookups(**cfg["rc_lookup"])
-    build_ldc_retail_counts(**cfg["rc_ldcN"])
-    rc_class_cfg = cfg["rc_classification"].copy()
-    rc_class_cfg.setdefault("london_split_override_enabled", True)
-    rc_class_cfg.setdefault("london_region_name", "London")
-    run_classification(**rc_class_cfg)
+    build_foursquare_anchor_counts(**cfg["rc_foursquare_anchors"])
+
+    run_classification(**cfg["rc_classification"])
+    run_ldc_numbers_comparison(**cfg["rc_classification_ldc_numbers_comparison"])
+
+
 if __name__ == "__main__":
     main()

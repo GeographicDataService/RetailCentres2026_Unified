@@ -697,11 +697,11 @@ def _maybe_parse_wkt(series: pd.Series) -> pd.Series:
     return series.apply(lambda geom: wkt.loads(geom) if isinstance(geom, str) else geom)
 
 
-def _load_rc_geo(lookups_csv: str, ldc_csv: str, crs: str) -> gpd.GeoDataFrame:
+def _load_rc_geo(lookups_csv: str, counts_csv: str, crs: str) -> gpd.GeoDataFrame:
     rc_lookups = pd.read_csv(lookups_csv)
-    rc_ldc = pd.read_csv(ldc_csv)
+    rc_counts = pd.read_csv(counts_csv)
 
-    rc = rc_ldc.merge(
+    rc = rc_counts.merge(
         rc_lookups.drop(columns=["geometry"], errors="ignore"),
         on="RC_ID",
         how="left",
@@ -723,7 +723,7 @@ def _load_rc_geo(lookups_csv: str, ldc_csv: str, crs: str) -> gpd.GeoDataFrame:
 def run_classification(
     *,
     rc_lookups_csv: str,
-    rc_ldc_csv: str,
+    rc_counts_csv: str | None = None,
     split_path: str,
     split_parent_col: str,
     split_flag_col: str,
@@ -740,8 +740,12 @@ def run_classification(
     london_town_centres_layer: str | None = None,
     london_town_centres_sitename_col: str = "sitename",
     london_town_centres_min_overlap_ratio: float = 0.05,
+    rc_ldc_csv: str | None = None,
 ):
-    rc_geo = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)
+    counts_csv = rc_counts_csv or rc_ldc_csv
+    if counts_csv is None:
+        raise TypeError("run_classification requires rc_counts_csv")
+    rc_geo = _load_rc_geo(rc_lookups_csv, counts_csv, crs)
 
     if "tr_retailN" not in rc_geo.columns:
         if retailN_col not in rc_geo.columns:

@@ -1,4 +1,5 @@
-output/
+output/*
+!output/.gitkeep
 geo/
 docs/
 figure/
@@ -16,3 +17,6 @@ data
 
 # OS / editor
 .DS_Store
+
+#compiled python files
+__pycache__/
