@@ -540,7 +540,7 @@ MANUAL_SUBAREA_NAMES_V4 = {
 }
 
 
-# ─── Shopping Outlets (hardcoded from R code) ─────────────────────────
+# ─── Shopping Outlets (hardcoded from R code, with burberry outlet removed) ─────────────────────────
 SHOPPING_OUTLETS = [
     ("Regional Shopping Centre", "Westfield London", 51.50769, -0.22088),
     ("Regional Shopping Centre", "Metrocentre", 54.95721, -1.66745),
@@ -558,7 +558,6 @@ SHOPPING_OUTLETS = [
     ("Large Outlet Shopping Centre", "Astle Park West Bromwich", 52.52010, -1.99603),
     ("Large Outlet Shopping Centre", "Bicester Outlet Village", 51.89238, -1.15608),
     ("Large Outlet Shopping Centre", "Bideford Atlantic Village", 51.00756, -4.23733),
-    ("Large Outlet Shopping Centre", "Burberry Factory Outlet London", 51.54651, -0.05093),
     ("Large Outlet Shopping Centre", "Castleford Junction 32 Outlet", 53.71246, -1.33884),
     ("Large Outlet Shopping Centre", "Chatham Dockside Outlet Centre", 51.40160, 0.53771),
     ("Large Outlet Shopping Centre", "Cheshire Oaks Designer Outlet", 53.26539, -2.88090),
@@ -697,19 +696,6 @@ def generate_names():
     print("\n=== 2a. Classification ===")
     classification = rc[["RC_ID", "Classification"]].copy()
     print(f"  Classifications:\n{classification['Classification'].value_counts().to_string()}")
-
-    # Match shopping outlets
-    outlets = match_outlets_to_centres(rc)
-    print(f"  Matched {len(outlets)} shopping outlets to centres")
-
-    # Override classification for matched outlets
-    for _, row in outlets.iterrows():
-        mask = classification["RC_ID"] == row["RC_ID"]
-        if mask.any():
-            classification.loc[mask, "Classification"] = row["SubType"]
-
-    # Temporary classification override — will move to separate classification code
-    classification.loc[classification["RC_ID"] == "1661", "Classification"] = "Large Retail Park"
 
     # ─── Level 1: Street Name ──────────────────────────────────────
     print("\n=== 2b. Name Assembly ===")
@@ -1123,6 +1109,40 @@ def generate_names():
     parquet_path = os.path.join(EXPORTS_DIR, "rc2025_named.parquet")
     rc_named.to_parquet(parquet_path)
     print(f"  Saved: {parquet_path}")
+
+    # Compact public export matching the historical retailcentre_bounds_uk schema.
+    compact = rc_named.merge(
+        naming[["RC_ID", "Country", "RegionNM"]].drop_duplicates("RC_ID"),
+        on="RC_ID",
+        how="left",
+    )
+    compact["Region_NM"] = compact["RegionNM"]
+    compact["H3_count"] = compact["H3_cells"] if "H3_cells" in compact.columns else np.nan
+    if "tr_retailN" in compact.columns:
+        compact["Retail_N"] = compact["tr_retailN"]
+    elif "Total_POI_count" in compact.columns:
+        compact["Retail_N"] = compact["Total_POI_count"]
+    else:
+        compact["Retail_N"] = np.nan
+    compact["Area_km2"] = compact.geometry.area / 1_000_000
+    compact_cols = [
+        "RC_ID",
+        "RC_Name",
+        "Classification",
+        "Country",
+        "Region_NM",
+        "H3_count",
+        "Retail_N",
+        "Area_km2",
+        "geometry",
+    ]
+    compact = compact[compact_cols]
+    compact_gpkg_path = os.path.join(EXPORTS_DIR, "retailcentre_bounds_uk.gpkg")
+    compact_parquet_path = os.path.join(EXPORTS_DIR, "retailcentre_bounds_uk.parquet")
+    compact.to_file(compact_gpkg_path, driver="GPKG")
+    compact.to_parquet(compact_parquet_path)
+    print(f"  Saved: {compact_gpkg_path}")
+    print(f"  Saved: {compact_parquet_path}")
 
     # Summary
     print(f"\n=== Complete ===")
