@@ -312,8 +312,8 @@ def apply_out_of_town_sizing(df: pd.DataFrame) -> pd.DataFrame:
 
     out_of_town_mask = df["Classification"].isin(["Out of Town Shopping Centres"])
 
-    df.loc[out_of_town_mask & (df["tr_retailN"] < 50), "Classification"] = "Small Shopping Centre"
-    df.loc[out_of_town_mask & (df["tr_retailN"] >= 50), "Classification"] = "Large Shopping Centre"
+    df.loc[out_of_town_mask & (df["tr_retailN"] < 25), "Classification"] = "Small Shopping Centre"
+    df.loc[out_of_town_mask & (df["tr_retailN"] >= 25), "Classification"] = "Large Shopping Centre"
 
     return df
 

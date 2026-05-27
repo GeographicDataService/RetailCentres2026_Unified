@@ -193,7 +193,7 @@ def apply_manual_edits(
         "28": "Regional Centre", # glasgow
         "5830": "Small Local Centre", # the one in the city of london at the barbican
         "3379": "Small Retail Park", # the gemini retail park
-        "1661": "Small Retail Park", # brighton marina
+        "1661": "Large Retail Park", # brighton marina
     }
 
     for rcid, cls in manual_classification_new.items():
@@ -315,8 +315,8 @@ def apply_shopping_outlet_overrides(
 
     df.loc[df["RC_ID"].isin(outlets_tag["RC_ID"]), "Classification"] = "Out of Town Shopping Centres"
     out_of_town_mask = df["Classification"].isin(["Out of Town Shopping Centres"])
-    df.loc[out_of_town_mask & (df["tr_retailN"] < 50), "Classification"] = "Small Shopping Centre"
-    df.loc[out_of_town_mask & (df["tr_retailN"] >= 50), "Classification"] = "Large Shopping Centre"
+    df.loc[out_of_town_mask & (df["tr_retailN"] < 25), "Classification"] = "Small Shopping Centre"
+    df.loc[out_of_town_mask & (df["tr_retailN"] >= 25), "Classification"] = "Large Shopping Centre"
 
     return df
 
