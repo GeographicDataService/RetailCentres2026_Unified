@@ -7,19 +7,6 @@ from pathlib import Path
 from utils import utils as ut
 
 
-# Make sure NLTK names are available
-import nltk
-nltk.download('names')
-
-# Preload British names once
-BRITISH_NAMES = set(nltk.corpus.names.words())
-
-def is_just_british_name(name: str, british_names: set) -> bool:
-    tokens = name.strip().title().split()
-    return len(tokens) == 2 and all(token in british_names for token in tokens)
-
-
-
 def filter_foursquare(foursquare):
     foursquare_filt = foursquare.filter(
         (foursquare["level1_category_name"] == "Retail")
@@ -192,25 +179,6 @@ def filter_foursquare(foursquare):
 
     print(f"Filtered Foursquare data (remove dealership fuel stations): {foursquare_filt.shape[0]} rows remaining.")
 
-
-
-       # Identify rows where name is just a British name
-# Apply the function to create a boolean mask
-    # foursquare = foursquare.with_columns([
-    #     pl.col("name").map_elements(lambda x: is_just_british_name(str(x), BRITISH_NAMES)).alias("is_name_only")
-    # ])
-
-    # # Split into removed and cleaned
-    # print(len(foursquare))
-    # removed_df = foursquare.filter((pl.col("is_name_only")) & (pl.col("level1_category_name") == "Business and Professional Services"))
-    # foursquare = foursquare.filter(~pl.col("is_name_only") | (pl.col("level1_category_name") != "Business and Professional Services"))
-  
-    # # Save removed names to Parquet
-    # if removed_df.height > 0:
-
-    #     removed_df.write_parquet("data/POI_files/removed_british_names.parquet")
-    #     print(f"Removed {removed_df.height} rows where name was just a British name. Saved to data/POI_files/removed_british_names.parquet")
-
     # Remove any with same name and lat lng (some have multiple categories)
     foursquare_filt = foursquare_filt.unique(subset=["name","lat","lng"])
 
@@ -224,21 +192,6 @@ def filter_foursquare(foursquare):
 
 
 
-def filter_overture(overture):
-    overture = overture.filter(
-        (overture["level1_category_name"] == "retail")
-        | (overture["level1_category_name"] == "eat_and_drink")
-        | (overture["level1_category_name"] == "beauty_and_spa")
-        | (overture["level1_category_name"] == "arts_and_entertainment")
-        | (overture["level2_category_name"] == "activate_life")
-        | (overture["level1_category_name"] == "automotive")
-        | (overture["level2_category_name"] == "art_gallery")
-        | (overture["level2_category_name"] == "museum")
-    )
-    return overture
-# Import necessary libraries
-
-# Add the main block
 if __name__ == "__main__":
 
     COLUMNS_TO_KEEP = [

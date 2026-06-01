@@ -251,7 +251,10 @@ def generate_networks(
     # ----------------------------------------
     print("Running subcentre finder...")
     filt_cells_with_network = find_subcentres.run_leiden_clustering_polars(
-        filt_cells_with_network, res=0.15, alpha=0, seed=505
+        filt_cells_with_network,
+        res=config.LEIDEN_RESOLUTION,
+        alpha=config.LEIDEN_ALPHA,
+        seed=config.LEIDEN_SEED,
     )
 
     print(

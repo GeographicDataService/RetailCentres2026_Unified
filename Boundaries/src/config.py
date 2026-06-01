@@ -17,7 +17,6 @@ from typing import Optional
 DATA_DIR = Path("data")
 INPUTS_DIR = DATA_DIR / "inputs"
 RUNS_DIR = DATA_DIR / "outputs" / "runs"
-ID_LOOKUPS_DIR = DATA_DIR / "outputs" / "id_lookups"
 INTERMEDIATE_DIR = DATA_DIR / "intermediate"
 BOUNDARIES_DIR = INPUTS_DIR / "boundaries"
 LANDUSE_DIR = INPUTS_DIR / "landuse"
@@ -44,22 +43,6 @@ ONSPD_DIR = INPUTS_DIR / "onspd"
 
 # Filter ID paths
 FILTER_IDS_PATH = INTERMEDIATE_DIR / "poi_filtered" / "quality_filter_ids.parquet"
-
-# Stable RC_ID restore lookup. Built from retailcentre_bounds_uk_email.parquet
-# and the deterministic generated-ID output. Applied when creating workshop files.
-RC_ID_RESTORE_LOOKUP_PATH = ID_LOOKUPS_DIR / "rc_id_restore_lookup_email.parquet"
-RC_ID_RESTORE_BBOX_TOLERANCE_M = 2.0
-
-
-# ========================================
-# QUALITY FILTER CONFIGURATION
-# ========================================
-
-# Whether to use presaved quality filter results (faster)
-USE_PRESAVED_FILTERS = False
-
-# Whether to save quality filter IDs for future reuse
-SAVE_FILTER_IDS = False
 
 
 # ========================================
@@ -118,40 +101,35 @@ MIN_REMAINDER_POIS = 10
 # Random seed for reproducibility (used in Leiden clustering)
 RANDOM_SEED = 505
 
-# Default parameter values for network generation
-# These can be overridden via command line or in parameter sweeps
-
-# Minimum POIs required for a H3 cell to be included
-DEFAULT_MIN_RETAIL_IN_CELL = 2
-
-# Minimum POIs required for final networks after processing
-DEFAULT_MIN_RETAIL_IN_NETWORK = 10
-
-# Minimum adjacent cells required to trigger gap-filling
-# Set to 6+ to effectively disable filling (hexagons have 6 neighbors)
-DEFAULT_MIN_TO_FILL = 6
-
-# POI threshold for network splitting via Leiden clustering
-# Networks below this threshold are not split into subcentres
-# Set to very high value (e.g., 9999999) to disable splitting
-DEFAULT_SPLIT_THRESHOLD = 1500
-
-# Whether to merge networks separated by a single cell
-DEFAULT_MERGE_ADJACENT = True
-
 
 # ========================================
 # PARAMETER SWEEP CONFIGURATION
 # ========================================
 
-# Parameter values to test in sweeps (main.py)
-# Each creates a separate output folder with results
+# Parameter values to test in sweeps (main.py). The pipeline runs every
+# combination of these lists, writing each to its own output folder.
 
-PARAM_SWEEP_SOURCES = ["foursquare"]
+# POI source is fixed to Foursquare, so it's not a sweep axis.
+
+# Minimum POIs required for a H3 cell to be included
 PARAM_SWEEP_MIN_RETAIL_IN_CELL = [2]
+
+# Minimum POIs required for final networks after processing
 PARAM_SWEEP_MIN_RETAIL_IN_NETWORK = [10]
+
+# Minimum adjacent cells required to trigger gap-filling
+# Set to 6+ to effectively disable filling (hexagons have 6 neighbors)
 PARAM_SWEEP_MIN_TO_FILL = [6]
+
+# POI threshold for network splitting via Leiden clustering.
+# Networks below this threshold are not split into subcentres.
+# Two values => two production runs per other-param combo:
+#   1500    -> large networks ARE split into subcentres via Leiden clustering
+#   9999999 -> effectively disables splitting (no network exceeds it),
+#              giving the un-split version of the same boundaries.
 PARAM_SWEEP_SPLIT_THRESHOLD = [1500, 9999999]
+
+# Whether to merge networks separated by a single cell
 PARAM_SWEEP_MERGE_ADJACENT = [True]
 
 

@@ -10,7 +10,6 @@ Changes in this version:
 
 import geopandas as gpd
 import pandas as pd
-from pathlib import Path
 from multiprocessing import Pool, cpu_count
 from dataclasses import dataclass
 from typing import Tuple, Dict, Optional, List
@@ -199,70 +198,3 @@ def run_landuse_filter(
     )
 
 
-def filter_centres_by_landuse(
-    centres_path: str,
-    commercial_path: str,
-    industrial_path: str,
-    overlap_threshold: float = 75.0,
-    poi_threshold: Optional[int] = 20,
-    source: str = "foursquare",
-    num_workers: int = None
-) -> LanduseFilterResult:
-    """Convenience wrapper that loads parquet files then runs the landuse filter."""
-
-    centres = gpd.read_parquet(centres_path)
-    commercial = gpd.read_parquet(commercial_path)
-    industrial = gpd.read_parquet(industrial_path)
-
-    return run_landuse_filter(
-        centres=centres,
-        commercial=commercial,
-        industrial=industrial,
-        overlap_threshold=overlap_threshold,
-        poi_threshold=poi_threshold,
-        source=source,
-        num_workers=num_workers
-    )
-
-
-# -----------------------------------------------------------------------------
-# Apply to output folder
-# -----------------------------------------------------------------------------
-
-def apply_landuse_filter_to_output(
-    save_folder: str,
-    commercial_path: str,
-    industrial_path: str,
-    overlap_threshold: float = 75.0,
-    poi_threshold: Optional[int] = 20,
-    source: str = "foursquare",
-    num_workers: int = None
-) -> None:
-
-    save_folder = Path(save_folder)
-    input_file = save_folder / "3_afterfill.parquet"
-
-    if not input_file.exists():
-        print(f"ERROR: Input file not found: {input_file}")
-        return
-
-    result = filter_centres_by_landuse(
-        centres_path=str(input_file),
-        commercial_path=commercial_path,
-        industrial_path=industrial_path,
-        overlap_threshold=overlap_threshold,
-        poi_threshold=poi_threshold,
-        source=source,
-        num_workers=num_workers
-    )
-
-    # Save
-    result.filtered.to_parquet(save_folder / "3_afterfill_landuse_filtered.parquet")
-    result.summary.to_csv(save_folder / "landuse_filter_summary.csv", index=False)
-
-    # Save removed networks for inspection
-    if not result.removed_cells.empty:
-        result.removed_cells.to_parquet(save_folder / "landuse_filter_removed_networks.parquet")
-
-    # Optional detailed overlaps
-    result.overlap_details.to_parquet(save_folder / "landuse_filter_overlap_details.parquet")

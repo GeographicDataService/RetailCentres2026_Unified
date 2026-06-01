@@ -35,7 +35,6 @@ np.random.seed(config.RANDOM_SEED)
 # Define parameter values
 run_name = args.run_name
 print(f"Run name: {run_name}")
-sources = config.PARAM_SWEEP_SOURCES
 min_retail_in_cell_values = config.PARAM_SWEEP_MIN_RETAIL_IN_CELL
 min_retail_in_network_values = config.PARAM_SWEEP_MIN_RETAIL_IN_NETWORK
 min_to_fill = config.PARAM_SWEEP_MIN_TO_FILL
@@ -44,7 +43,6 @@ merge_adjacent = config.PARAM_SWEEP_MERGE_ADJACENT
 
 # Generate all parameter combinations
 param_combinations = itertools.product(
-    sources,
     min_retail_in_cell_values,
     min_retail_in_network_values,
     min_to_fill,
@@ -175,7 +173,6 @@ else:
     print("\n✓ Retail parks integration disabled (config.INTEGRATE_RETAIL_PARKS = False)")
 
 for idx, (
-    source,
     min_retail_in_cell,
     min_retail_in_network,
     min_to_fill,
@@ -184,13 +181,12 @@ for idx, (
 ) in enumerate(param_combinations_list, start=1):
     print(f"Processing combination {idx} of {total_combos}")
     print(
-        f"Parameters: source={source}, min_cell={min_retail_in_cell}, min_network={min_retail_in_network}, min_to_fill={min_to_fill}, split_threshold={split_threshold}, merge_adjacent={merge_adjacent}"
+        f"Parameters: min_cell={min_retail_in_cell}, min_network={min_retail_in_network}, min_to_fill={min_to_fill}, split_threshold={split_threshold}, merge_adjacent={merge_adjacent}"
     )
 
     generate_networks(
         combined,
         run_name=run_name,
-        source=source,
         min_retail_in_cell=min_retail_in_cell,
         min_retail_in_network=min_retail_in_network,
         min_to_fill=min_to_fill,
