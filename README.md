@@ -1,6 +1,8 @@
-# Retail Centres — Unified Workspace
+# Retail Centres — Unified Workspace (2026)
 
 A single git repository bundling the three active UK Retail Centre projects under one shared Python environment:
+
+<img width="1407" height="726" alt="UK retail centre boundaries" src="https://github.com/user-attachments/assets/57fa2bca-145c-400d-ab2b-0883a24c748e" />
 
 | Subfolder | Purpose | Main entry point |
 |-----------|---------|------------------|
