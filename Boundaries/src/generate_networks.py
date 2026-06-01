@@ -338,16 +338,14 @@ def generate_networks(
         }
     )
 
-    # ----------------------------------------
-    # Post-processing: merge centres that were incorrectly split
-    # e.g. Camden (RC_IDs 130+218) split by Leiden clustering
-    # ----------------------------------------
-    if centre_postprocessing.POST_MERGE_GROUPS:
-        dissolved_combined = centre_postprocessing.merge_centres(
-            dissolved_combined, centre_postprocessing.POST_MERGE_GROUPS
-        )
+    # NOTE: post-processing merge of Leiden-split centres (e.g. Camden) is no
+    # longer applied here. It is keyed by post-rank generated RC_IDs, which differ
+    # between split-threshold sweeps and silently glued unrelated centres in the
+    # nosplit run (e.g. Milton Keynes + Bexhill at RC_ID 130). The merge has been
+    # moved to scripts/create_workshop_files_v2.py, applied to the split-run
+    # centres after RC_ID restore so it can be keyed by stable RC_IDs.
 
-    dissolved_combined.to_parquet(f"{save_folder}/4_finalcentres.parquet")
+    dissolved_combined.to_crs("EPSG:4326").to_parquet(f"{save_folder}/4_finalcentres.parquet")
 
     # ----------------------------------------
     # Add local authority names to final centres
@@ -355,4 +353,4 @@ def generate_networks(
     dissolved_gdf_las = centre_postprocessing.add_localauthorities_to_centres(
         dissolved_combined
     )
-    dissolved_gdf_las.to_parquet(f"{save_folder}/4_finalcentres_las.parquet")
+    dissolved_gdf_las.to_crs("EPSG:4326").to_parquet(f"{save_folder}/4_finalcentres_las.parquet")

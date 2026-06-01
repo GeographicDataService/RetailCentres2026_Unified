@@ -523,17 +523,16 @@ def convert_retail_parks_to_h3(
     def get_h3_indices(geometry, resolution=13):
         """Convert a polygon or multipolygon to H3 cell indices."""
         if geometry.geom_type == 'Polygon':
-            coords = [(lat, lng) for lng, lat in geometry.exterior.coords]
+            ring = [(lat, lng) for lng, lat in geometry.exterior.coords]
+            return list(h3.h3shape_to_cells(h3.LatLngPoly(ring), res=resolution))
         elif geometry.geom_type == 'MultiPolygon':
-            coords = []
+            cells = set()
             for poly in geometry.geoms:
-                coords.extend([(lat, lng) for lng, lat in poly.exterior.coords])
+                ring = [(lat, lng) for lng, lat in poly.exterior.coords]
+                cells.update(h3.h3shape_to_cells(h3.LatLngPoly(ring), res=resolution))
+            return list(cells)
         else:
             raise ValueError(f"Geometry type {geometry.geom_type} not supported")
-
-        # Create H3 polygon and convert to cells
-        poly = h3.LatLngPoly(coords)
-        return h3.h3shape_to_cells(poly, res=resolution)
 
     print("="*80)
     print("CONVERTING RETAIL PARKS TO H3 CELLS")

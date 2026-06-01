@@ -17,10 +17,166 @@ Also creates:
 """
 
 import geopandas as gpd
+import pandas as pd
 import argparse
 from pathlib import Path
 from datetime import datetime
 import re
+
+
+# --- Configuration (inlined; this script has no intra-project imports) ------
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LEGACY_RC_BOUNDS_PATH = REPO_ROOT / "data" / "inputs" / "legacy_rc_bounds.parquet"
+RC_ID_RESTORE_BBOX_TOLERANCE_M = 2.0
+
+# Camden's two pieces are Leiden-split into adjacent centres. In the un-merged
+# generate_networks output, they sit at generated RC_IDs 130 (north, 631 POIs)
+# and 218 (south, 487 POIs). Merging them here (before RC_ID restore) re-fuses
+# Camden into a single centre, matching what the published rc_id_restore_lookup
+# expects (9,623 rows, with Camden as one row at stable RC_ID 130).
+CAMDEN_MERGE_IDS: tuple[int, int] | None = (130, 218)
+
+# BNG bounding box (EPSG:27700) the merge must lie inside, so a future POI-count
+# reshuffle that puts unrelated centres at IDs 130/218 silently no-ops instead
+# of fusing two random centres into a Frankenstein polygon. Camden is centred
+# around (529000, 184000); a 5 km box gives ample slack for any future drift.
+CAMDEN_EXPECTED_BBOX_27700 = (524000, 179000, 534000, 189000)  # (minx, miny, maxx, maxy)
+
+
+def merge_camden(centres: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Union Camden's two Leiden-split pieces into a single row.
+
+    Keeps the lower RC_ID, unions geometries, sums numeric columns and concats
+    category_names. Deliberately minimal: no hole-filling, no LA recalculation.
+    """
+    if CAMDEN_MERGE_IDS is None:
+        return centres
+    a, b = CAMDEN_MERGE_IDS
+    rows = centres[centres['RC_ID'].isin([a, b])]
+    if len(rows) != 2:
+        print(f"  Camden merge skipped: expected 2 rows for IDs {CAMDEN_MERGE_IDS}, found {len(rows)}")
+        return centres
+
+    # Sanity-check that both candidates actually lie inside Camden's expected
+    # BNG bounding box. Without this, a future POI-rank reshuffle could put
+    # unrelated centres at IDs 130/218 and we'd silently fuse them (exactly the
+    # Milton-Keynes/Bexhill bug that motivated moving the merge here).
+    rows_27700 = rows if rows.crs and rows.crs.to_string() == 'EPSG:27700' else rows.to_crs(27700)
+    minx, miny, maxx, maxy = CAMDEN_EXPECTED_BBOX_27700
+    for _, r in rows_27700.iterrows():
+        b_minx, b_miny, b_maxx, b_maxy = r.geometry.bounds
+        if not (minx <= b_minx and miny <= b_miny and b_maxx <= maxx and b_maxy <= maxy):
+            print(
+                f"  Camden merge skipped: RC_ID {int(r['RC_ID'])} bounds "
+                f"({b_minx:.0f},{b_miny:.0f},{b_maxx:.0f},{b_maxy:.0f}) fall "
+                f"outside CAMDEN_EXPECTED_BBOX_27700 {CAMDEN_EXPECTED_BBOX_27700}. "
+                "IDs 130/218 likely no longer refer to Camden — re-confirm before re-enabling."
+            )
+            return centres
+
+    keep_id = min(a, b)
+    kept = rows[rows['RC_ID'] == keep_id].iloc[0].copy()
+    kept['geometry'] = rows.geometry.unary_union
+    for col in ['Total_POI_count', 'Retail', 'Dining and Drinking',
+                'Leisure & Travel', 'Community & Health', '# H3 cells']:
+        if col in rows.columns:
+            kept[col] = rows[col].sum()
+    if 'category_names' in rows.columns:
+        kept['category_names'] = list({c for lst in rows['category_names'] if lst is not None for c in lst})
+
+    other = centres[~centres['RC_ID'].isin([a, b])]
+    merged = gpd.GeoDataFrame([kept], geometry='geometry', crs=centres.crs)
+    return gpd.GeoDataFrame(pd.concat([other, merged], ignore_index=True), crs=centres.crs)\
+        .sort_values('RC_ID').reset_index(drop=True)
+
+
+def remap_to_legacy_ids(
+    centres: gpd.GeoDataFrame,
+    legacy_path: str | Path,
+    bbox_tolerance_m: float = 2.0,
+) -> gpd.GeoDataFrame:
+    """Overwrite generated RC_IDs with legacy IDs by pairing polygons on bbox.
+
+    Loads the legacy spolygons file (the ``_email`` file moved into data/inputs/),
+    requires a 1:1 row match with ``centres``, and pairs each workshop centre to
+    the legacy polygon whose bounding box matches within ``bbox_tolerance_m`` on
+    every coordinate. Raises loudly on any size mismatch, unpaired centre, or
+    duplicate legacy ID.
+    """
+    legacy_path = Path(legacy_path)
+    if not legacy_path.exists():
+        raise FileNotFoundError(f"Legacy RC bounds file not found: {legacy_path}")
+
+    legacy = gpd.read_parquet(legacy_path)
+    if 'RC_ID' not in legacy.columns:
+        raise ValueError(f"Legacy file {legacy_path} is missing required 'RC_ID' column")
+
+    result = centres.copy()
+    if len(result) != len(legacy):
+        raise ValueError(
+            f"Legacy remap aborted: row count mismatch. "
+            f"Workshop centres: {len(result):,}; legacy ({legacy_path.name}): {len(legacy):,}. "
+            "Most likely cause: Camden not merged before remap, or a split-threshold mismatch."
+        )
+
+    # Project legacy into the workshop CRS so bbox tolerances share metres.
+    if result.crs is None:
+        raise ValueError("Workshop centres have no CRS; cannot compare bboxes to legacy.")
+    if legacy.crs is None:
+        raise ValueError(f"Legacy file {legacy_path} has no CRS; cannot compare bboxes.")
+    if legacy.crs.to_string() != result.crs.to_string():
+        legacy = legacy.to_crs(result.crs)
+
+    work_bounds = result.geometry.bounds.copy()
+    work_bounds['generated_RC_ID'] = result['RC_ID'].values
+    legacy_bounds = legacy.geometry.bounds.copy()
+    legacy_bounds['legacy_RC_ID'] = legacy['RC_ID'].values
+
+    # Sort both by (minx, miny) and pair positionally — the bbox tolerance check
+    # below catches any mispairing.
+    work_sorted = work_bounds.sort_values(['minx', 'miny']).reset_index(drop=True)
+    legacy_sorted = legacy_bounds.sort_values(['minx', 'miny']).reset_index(drop=True)
+
+    diffs = (work_sorted[['minx', 'miny', 'maxx', 'maxy']].values
+             - legacy_sorted[['minx', 'miny', 'maxx', 'maxy']].values)
+    max_diff = abs(diffs).max(axis=1)
+    failed_mask = max_diff > bbox_tolerance_m
+    if failed_mask.any():
+        n_failed = int(failed_mask.sum())
+        sample = pd.concat(
+            [
+                work_sorted.loc[failed_mask, ['generated_RC_ID', 'minx', 'miny', 'maxx', 'maxy']].head(10).add_prefix('work_'),
+                legacy_sorted.loc[failed_mask, ['legacy_RC_ID', 'minx', 'miny', 'maxx', 'maxy']].head(10).add_prefix('legacy_').reset_index(drop=True),
+            ],
+            axis=1,
+        )
+        raise ValueError(
+            f"Legacy remap aborted: {n_failed:,} workshop centres do not pair to a "
+            f"legacy polygon within {bbox_tolerance_m}m bbox tolerance.\n{sample.to_string(index=False)}"
+        )
+
+    id_map = dict(zip(work_sorted['generated_RC_ID'], legacy_sorted['legacy_RC_ID']))
+    if len(set(id_map.values())) != len(id_map):
+        raise ValueError("Legacy remap produced duplicate legacy IDs (pairing is not bijective).")
+
+    print(
+        f"Remapping {len(id_map):,} RC_IDs to legacy IDs from {legacy_path} "
+        f"(bbox tolerance {bbox_tolerance_m}m)."
+    )
+
+    remapped = result['RC_ID'].map(id_map)
+    if remapped.isna().any():
+        raise ValueError("Legacy remap produced null IDs; pairing is incomplete.")
+    remapped_str = remapped.astype(str)
+    if remapped_str.str.fullmatch(r"\d+").all():
+        result['RC_ID'] = remapped_str.astype(int)
+    else:
+        result['RC_ID'] = remapped_str
+    if result['RC_ID'].duplicated().any():
+        dups = result.loc[result['RC_ID'].duplicated(keep=False), 'RC_ID'].tolist()
+        raise ValueError(f"Legacy remap produced duplicate IDs: {dups[:20]}")
+
+    return result.sort_values('RC_ID').reset_index(drop=True)
 
 
 def sanitize_column_names(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -197,10 +353,37 @@ def add_split_tracking_columns(centres_split: gpd.GeoDataFrame, centres_nosplit:
     return centres_split
 
 
+def apply_legacy_ids(centres: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Merge Camden + remap workshop split-centre RC_IDs onto legacy IDs."""
+    print("\nApplying legacy RC_IDs to split workshop centres...")
+
+    original_crs = centres.crs
+    centres_for_check = centres
+    if original_crs is not None and original_crs.to_string() != "EPSG:27700":
+        centres_for_check = centres.to_crs("EPSG:27700")
+
+    # Merge Camden's two Leiden-split pieces BEFORE the remap so the row count
+    # matches the legacy file (which has Camden as a single row). merge_camden
+    # is guarded by a bbox check so it no-ops if 130/218 ever stop being Camden.
+    centres_for_check = merge_camden(centres_for_check)
+
+    remapped = remap_to_legacy_ids(
+        centres_for_check,
+        LEGACY_RC_BOUNDS_PATH,
+        bbox_tolerance_m=RC_ID_RESTORE_BBOX_TOLERANCE_M,
+    )
+
+    if original_crs is not None and remapped.crs != original_crs:
+        remapped = remapped.to_crs(original_crs)
+
+    return remapped
+
+
 def create_workshop_centres(
     split_centres_path: str,
     nosplit_centres_path: str,
-    output_dir: str = "data/forarcgis"
+    output_dir: str = "data/forarcgis",
+    legacy_ids: bool = False,
 ):
     """Create 4 variants of postworkshopcentres GPKG files."""
 
@@ -211,6 +394,8 @@ def create_workshop_centres(
     # Load centres with splits (splitthresh_1500)
     centres_split = gpd.read_parquet(split_centres_path)
     print(f"  Loaded {len(centres_split)} centres with splits")
+    if legacy_ids:
+        centres_split = apply_legacy_ids(centres_split)
 
     # Load centres without splits (splitthresh_99999)
     centres_nosplit = gpd.read_parquet(nosplit_centres_path)
@@ -223,6 +408,11 @@ def create_workshop_centres(
     print("\nSanitizing column names for ArcGIS Online...")
     centres_split = sanitize_column_names(centres_split)
     centres_nosplit = sanitize_column_names(centres_nosplit)
+
+    # Reproject to WGS84 for ArcGIS Online compatibility (no client-side datum
+    # transformation needed; sidesteps OSGB36/OSTN15 issues for NI features).
+    centres_split = centres_split.to_crs("EPSG:4326")
+    centres_nosplit = centres_nosplit.to_crs("EPSG:4326")
 
     # 1. postworkshopcentres.gpkg - with splits, with category_names
     print("\n1. Creating postworkshopcentres.gpkg (with splits, with category_names)...")
@@ -331,9 +521,9 @@ def create_filtered_pois(poi_path: str, output_dir: str = "data/forarcgis"):
 
     print(f"  Filtered to {len(filtered_pois)} POIs with columns: {list(filtered_pois.columns)}")
 
-    # Save to GPKG
+    # Save to GPKG (WGS84 for AGOL compatibility)
     output_path = output_dir / "filtered_pois.gpkg"
-    filtered_pois.to_file(output_path, driver="GPKG", layer="filtered_pois")
+    filtered_pois.to_crs("EPSG:4326").to_file(output_path, driver="GPKG", layer="filtered_pois")
     print(f"  Saved to {output_path}")
 
     print("\nFiltered POI geopackage created successfully!")
@@ -354,9 +544,9 @@ def create_retail_parks_gpkg(retail_parks_path: str, output_dir: str = "data/for
     print("  Sanitizing column names for ArcGIS Online...")
     retail_parks = sanitize_column_names(retail_parks)
 
-    # Save to GPKG
+    # Save to GPKG (WGS84 for AGOL compatibility)
     output_path = output_dir / "retail_parks.gpkg"
-    retail_parks.to_file(output_path, driver="GPKG", layer="retail_parks")
+    retail_parks.to_crs("EPSG:4326").to_file(output_path, driver="GPKG", layer="retail_parks")
     print(f"  Saved to {output_path}")
     print(f"  Columns: {list(retail_parks.columns)}")
 
@@ -366,7 +556,8 @@ def create_retail_parks_gpkg(retail_parks_path: str, output_dir: str = "data/for
 def create_centres_clean(
     split_centres_path: str,
     nosplit_centres_path: str,
-    output_dir: str = "data/forarcgis"
+    output_dir: str = "data/forarcgis",
+    legacy_ids: bool = False,
 ):
     """Create clean centres GPKG with only RC_ID and category totals."""
 
@@ -377,6 +568,8 @@ def create_centres_clean(
     print(f"Loading centres from {split_centres_path}...")
     centres = gpd.read_parquet(split_centres_path)
     print(f"  Loaded {len(centres)} centres")
+    if legacy_ids:
+        centres = apply_legacy_ids(centres)
 
     # Load nosplit centres for split tracking calculation
     centres_nosplit = gpd.read_parquet(nosplit_centres_path)
@@ -435,9 +628,9 @@ def create_centres_clean(
     # Sanitize column names for ArcGIS
     centres_clean = sanitize_column_names(centres_clean)
 
-    # Save to GPKG
+    # Save to GPKG (WGS84 for AGOL compatibility)
     output_path = output_dir / "centres_clean.gpkg"
-    centres_clean.to_file(output_path, driver="GPKG", layer="centres_clean")
+    centres_clean.to_crs("EPSG:4326").to_file(output_path, driver="GPKG", layer="centres_clean")
     print(f"  Saved to {output_path}")
     print(f"  Columns: {list(centres_clean.columns)}")
 
@@ -522,9 +715,9 @@ def create_retail_parks_clean(
     # Sanitize column names for ArcGIS
     retail_parks_clean = sanitize_column_names(retail_parks_clean)
 
-    # Save to GPKG
+    # Save to GPKG (WGS84 for AGOL compatibility)
     output_path = output_dir / "retail_parks_clean.gpkg"
-    retail_parks_clean.to_file(output_path, driver="GPKG", layer="retail_parks_clean")
+    retail_parks_clean.to_crs("EPSG:4326").to_file(output_path, driver="GPKG", layer="retail_parks_clean")
     print(f"  Saved to {output_path}")
     print(f"  Columns: {list(retail_parks_clean.columns)}")
 
@@ -641,6 +834,16 @@ if __name__ == "__main__":
         default=None,
         help="Output directory (default: timestamped folder in data/forarcgis)"
     )
+    parser.add_argument(
+        "--legacy-ids",
+        action="store_true",
+        help=(
+            "Remap workshop split-centre RC_IDs to the legacy IDs in "
+            "data/inputs/legacy_rc_bounds.parquet. Requires the workshop polygons "
+            "to match the legacy polygons within a 2 m bbox tolerance "
+            "(Camden's two Leiden-split pieces are auto-merged first)."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -672,7 +875,8 @@ if __name__ == "__main__":
     create_workshop_centres(
         split_centres,
         nosplit_centres,
-        output_dir
+        output_dir,
+        legacy_ids=args.legacy_ids,
     )
 
     # Create filtered POI file
@@ -683,7 +887,7 @@ if __name__ == "__main__":
         create_retail_parks_gpkg(retail_parks, output_dir)
 
     # Create clean centres file (with only RC_ID and category totals)
-    create_centres_clean(split_centres, nosplit_centres, output_dir)
+    create_centres_clean(split_centres, nosplit_centres, output_dir, legacy_ids=args.legacy_ids)
 
     # Create clean retail parks file (if provided)
     if retail_parks:

@@ -415,6 +415,13 @@ def assign_networks_to_parks(
     # Create mapping of h3_11 -> park_id for fast lookup
     park_cell_to_park_id = dict(zip(park_cells['h3_11'], park_cells['park_id']))
 
+    # Size lookup for deterministic tie-breaking. centre_poi_total is repeated
+    # on every cell of a park, so dict() collapses to one entry per park_id.
+    if 'centre_poi_total' in park_cells.columns:
+        park_size = dict(zip(park_cells['park_id'], park_cells['centre_poi_total']))
+    else:
+        park_size = park_cells.groupby('park_id').size().to_dict()
+
     # For each network, find adjacent park
     assigned_cells = []
 
@@ -430,9 +437,20 @@ def assign_networks_to_parks(
                     adjacent_parks.append(park_cell_to_park_id[neighbor])
 
         if adjacent_parks:
-            # Assign to most common adjacent park
-            most_common_park = Counter(adjacent_parks).most_common(1)[0][0]
-            assigned_park_id = most_common_park
+            # Pick the park that minimises the tuple
+            # (-edge_count, park_size, park_id). Tuples compare position-by-
+            # position, so this is effectively:
+            #   1. highest edge-count wins (negated → "min of negatives" = max)
+            #   2. tied on edges → smallest park wins (lowest centre_poi_total)
+            #   3. tied on size too → lowest park_id wins (final fallback)
+            # The size + id tiebreaks replace Counter.most_common's insertion-
+            # order fallback, which leaked polars' non-deterministic row order
+            # into the assignment.
+            counts = Counter(adjacent_parks)
+            assigned_park_id = min(
+                counts,
+                key=lambda p: (-counts[p], park_size.get(p, 0), p),
+            )
         else:
             print(f"  Warning: Network {network_id} ({len(cells_in_network)} cells) has no adjacent park - using fallback")
             # Sample some cells for debugging
@@ -670,7 +688,7 @@ def dissolve_to_polygons_with_metadata(park_networks: gpd.GeoDataFrame, name: st
     dissolved['geometry'] = dissolved['geometry'].apply(fill_holes)
 
     # Add area
-    dissolved_27700 = dissolved.to_crs('EPSG:27700')
+    dissolved_27700 = dissolved.to_crs("EPSG:27700")
     dissolved['area_sqm'] = dissolved_27700.geometry.area
     dissolved['area_sqkm'] = dissolved['area_sqm'] / 1_000_000
 
@@ -754,7 +772,7 @@ def create_polygon_outputs(
         dissolved['geometry'] = dissolved['geometry'].apply(fill_holes)
 
         # Add area
-        dissolved_27700 = dissolved.to_crs('EPSG:27700')
+        dissolved_27700 = dissolved.to_crs("EPSG:27700")
         dissolved['area_sqm'] = dissolved_27700.geometry.area
         dissolved['area_sqkm'] = dissolved['area_sqm'] / 1_000_000
 

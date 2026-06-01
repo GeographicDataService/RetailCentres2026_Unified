@@ -780,7 +780,7 @@ def filter_duplicate_pois(
 
     if len(pairs) == 0:
         print("  No duplicates found")
-        return df.drop("row_id", strict=False)
+        return df
 
     # Build connected components (duplicate groups)
     G = nx.Graph()
@@ -855,7 +855,7 @@ def filter_duplicate_pois(
         to_remove.select("row_id").with_columns(pl.lit(True).alias("remove")),
         on="row_id",
         how="left"
-    ).filter(pl.col("remove").is_null()).drop("remove", "row_id", strict=False)
+    ).filter(pl.col("remove").is_null()).drop("remove", strict=False)
 
     print(f"POIs remaining after duplicate removal: {len(filtered):,}")
     print(f"Removed: {initial_count - len(filtered):,} ({100 * (initial_count - len(filtered)) / initial_count:.3f}%)")
@@ -928,7 +928,7 @@ def filter_business_change_pois(
 
     if len(location_groups) == 0:
         print("  No business changes detected")
-        return df.drop("row_id", strict=False)
+        return df
 
     print(f"  Locations with business changes: {len(location_groups):,}")
 
@@ -1013,7 +1013,7 @@ def filter_business_change_pois(
     filtered = df.join(
         to_remove.select("row_id").with_columns(pl.lit(True).alias("remove")),
         on="row_id", how="left"
-    ).filter(pl.col("remove").is_null()).drop("remove", "row_id", strict=False)
+    ).filter(pl.col("remove").is_null()).drop("remove", strict=False)
 
     print(f"POIs remaining after business change removal: {len(filtered):,}")
     print(f"Removed: {initial_count - len(filtered):,} ({100 * (initial_count - len(filtered)) / initial_count:.3f}%)")
@@ -1285,25 +1285,27 @@ def load_and_apply_presaved_filters(
 
     # Show breakdown
     print("\nFilter breakdown:")
-    breakdown = removed_ids.group_by("filter_type").agg(pl.count().alias("count"))
+    breakdown = removed_ids.group_by("filter_type").agg(pl.len().alias("count"))
     for row in breakdown.iter_rows(named=True):
         print(f"  - {row['filter_type']}: {row['count']:,}")
 
-    total_to_remove = len(removed_ids.select("fsq_place_id").unique())
-    print(f"\nTotal unique IDs to remove: {total_to_remove:,}")
+    total_to_remove = len(removed_ids.select("row_id").unique())
+    print(f"\nTotal rows to remove: {total_to_remove:,}")
 
-    # Check for fsq_place_id column
-    if "fsq_place_id" not in foursquare.columns:
-        raise ValueError("foursquare DataFrame must have 'fsq_place_id' column")
+    # Add the same row_id used when the filter IDs were saved (input row position).
+    if "row_id" in foursquare.columns:
+        foursquare = foursquare.drop("row_id")
+    foursquare = foursquare.with_row_index("row_id")
 
     initial_count = len(foursquare)
 
-    # Remove POIs using anti-join
+    # Remove rows using row_id anti-join (preserves intra-POI dedup decisions
+    # that an fsq_place_id-only anti-join would miss).
     filtered = foursquare.join(
-        removed_ids.select("fsq_place_id").unique(),
-        on="fsq_place_id",
+        removed_ids.select("row_id").unique(),
+        on="row_id",
         how="anti"
-    )
+    ).drop("row_id")
 
     print(f"\nStarting POIs: {initial_count:,}")
     print(f"POIs removed: {initial_count - len(filtered):,}")
@@ -1389,9 +1391,17 @@ def filter_foursquare_quality(
     print("="*60)
     print(f"Starting POIs: {len(foursquare):,}")
 
+    # Add a stable row_id (input row position) so filter tracking is row-level,
+    # not just fsq_place_id-level. The duplicate filter removes individual rows
+    # of POIs that may have multiple entries; saving only fsq_place_id loses
+    # that information and makes --use_presaved_filters diverge from the
+    # from-scratch run. Dropped before returning.
+    if "row_id" in foursquare.columns:
+        foursquare = foursquare.drop("row_id")
+    foursquare = foursquare.with_row_index("row_id")
     foursquare_filt = foursquare
 
-    # Track removed IDs if saving is enabled
+    # Track removed row_ids if saving is enabled
     removed_ids_by_filter = {}
 
     # Ensure fsq_place_id exists for tracking
@@ -1405,7 +1415,7 @@ def filter_foursquare_quality(
     initial_count = len(foursquare_filt)
     if save_filter_ids:
         closed_venues = foursquare_filt.filter(pl.col("date_closed").is_not_null())
-        removed_ids_by_filter["closed"] = closed_venues.select("fsq_place_id")
+        removed_ids_by_filter["closed"] = closed_venues.select(["row_id", "fsq_place_id"])
     foursquare_filt = foursquare_filt.filter(pl.col("date_closed").is_null())
     closed_count = initial_count - len(foursquare_filt)
     print(f"Removed {closed_count:,} closed venues")
@@ -1424,15 +1434,15 @@ def filter_foursquare_quality(
         )
         if save_filter_ids:
             removed_defunct = foursquare.filter(
-                ~pl.col("fsq_place_id").is_in(foursquare_filt.select("fsq_place_id"))
-            ).select("fsq_place_id")
+                ~pl.col("row_id").is_in(foursquare_filt.get_column("row_id"))
+            ).select(["row_id", "fsq_place_id"])
             if len(removed_defunct) > 0:
                 removed_ids_by_filter["defunct"] = removed_defunct
 
     # Apply UK boundary filter
     print("\n2. Filtering by UK boundary...")
     print("-" * 60)
-    pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
+    pre_filter_ids = foursquare_filt.select(["row_id", "fsq_place_id"]) if save_filter_ids else None
     foursquare_filt = filter_by_uk_boundary(
         foursquare_filt,
         boundary_path=boundary_path,
@@ -1441,8 +1451,8 @@ def filter_foursquare_quality(
     )
     if save_filter_ids:
         removed_outside_uk = pre_filter_ids.join(
-            foursquare_filt.select("fsq_place_id"),
-            on="fsq_place_id",
+            foursquare_filt.select("row_id"),
+            on="row_id",
             how="anti"
         )
         if len(removed_outside_uk) > 0:
@@ -1452,7 +1462,7 @@ def filter_foursquare_quality(
     if filter_foreign_addresses:
         print("\n3. Filtering foreign addresses...")
         print("-" * 60)
-        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
+        pre_filter_ids = foursquare_filt.select(["row_id", "fsq_place_id"]) if save_filter_ids else None
         foursquare_filt = filter_foreign_address_pois(
             foursquare_filt,
             save_removed=save_foreign_addresses_removed,
@@ -1460,8 +1470,8 @@ def filter_foursquare_quality(
         )
         if save_filter_ids:
             removed_foreign = pre_filter_ids.join(
-                foursquare_filt.select("fsq_place_id"),
-                on="fsq_place_id",
+                foursquare_filt.select("row_id"),
+                on="row_id",
                 how="anti"
             )
             if len(removed_foreign) > 0:
@@ -1471,7 +1481,7 @@ def filter_foursquare_quality(
     if filter_postcode_mismatch:
         print("\n4. Filtering postcode mismatches...")
         print("-" * 60)
-        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
+        pre_filter_ids = foursquare_filt.select(["row_id", "fsq_place_id"]) if save_filter_ids else None
         foursquare_filt = filter_postcode_mismatch_pois(
             foursquare_filt,
             onspd_dir=onspd_dir,
@@ -1482,8 +1492,8 @@ def filter_foursquare_quality(
         )
         if save_filter_ids:
             removed_postcode = pre_filter_ids.join(
-                foursquare_filt.select("fsq_place_id"),
-                on="fsq_place_id",
+                foursquare_filt.select("row_id"),
+                on="row_id",
                 how="anti"
             )
             if len(removed_postcode) > 0:
@@ -1493,7 +1503,7 @@ def filter_foursquare_quality(
     if filter_duplicates:
         print("\n5. Filtering duplicate POIs...")
         print("-" * 60)
-        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
+        pre_filter_ids = foursquare_filt.select(["row_id", "fsq_place_id"]) if save_filter_ids else None
         foursquare_filt = filter_duplicate_pois(
             foursquare_filt,
             name_threshold=duplicate_name_threshold,
@@ -1503,8 +1513,8 @@ def filter_foursquare_quality(
         )
         if save_filter_ids:
             removed_duplicates = pre_filter_ids.join(
-                foursquare_filt.select("fsq_place_id"),
-                on="fsq_place_id",
+                foursquare_filt.select("row_id"),
+                on="row_id",
                 how="anti"
             )
             if len(removed_duplicates) > 0:
@@ -1514,7 +1524,7 @@ def filter_foursquare_quality(
     if filter_business_changes:
         print("\n6. Filtering business changes...")
         print("-" * 60)
-        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
+        pre_filter_ids = foursquare_filt.select(["row_id", "fsq_place_id"]) if save_filter_ids else None
         foursquare_filt = filter_business_change_pois(
             foursquare_filt,
             coord_precision=5,
@@ -1524,8 +1534,8 @@ def filter_foursquare_quality(
         )
         if save_filter_ids:
             removed_business_changes = pre_filter_ids.join(
-                foursquare_filt.select("fsq_place_id"),
-                on="fsq_place_id",
+                foursquare_filt.select("row_id"),
+                on="row_id",
                 how="anti"
             )
             if len(removed_business_changes) > 0:
@@ -1535,7 +1545,7 @@ def filter_foursquare_quality(
     if filter_registered_offices:
         print("\n7. Filtering registered office postcodes...")
         print("-" * 60)
-        pre_filter_ids = foursquare_filt.select("fsq_place_id") if save_filter_ids else None
+        pre_filter_ids = foursquare_filt.select(["row_id", "fsq_place_id"]) if save_filter_ids else None
         foursquare_filt = filter_registered_office_postcodes(
             foursquare_filt,
             save_removed=save_registered_offices_removed,
@@ -1543,8 +1553,8 @@ def filter_foursquare_quality(
         )
         if save_filter_ids:
             removed_registered = pre_filter_ids.join(
-                foursquare_filt.select("fsq_place_id"),
-                on="fsq_place_id",
+                foursquare_filt.select("row_id"),
+                on="row_id",
                 how="anti"
             )
             if len(removed_registered) > 0:
@@ -1584,4 +1594,4 @@ def filter_foursquare_quality(
     print(f"POIs remaining: {len(foursquare_filt):,}")
     print(f"Removal rate: {100 * (len(foursquare) - len(foursquare_filt)) / len(foursquare):.2f}%")
 
-    return foursquare_filt
+    return foursquare_filt.drop("row_id", strict=False)

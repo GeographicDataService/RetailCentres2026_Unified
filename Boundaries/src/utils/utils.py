@@ -17,7 +17,7 @@ def to_geoframe(df):
     df["geometry"] = df["geometry"].apply(lambda x: Polygon(x))
     # make valid geometry
     df = gpd.GeoDataFrame(df, geometry="geometry", crs="EPSG:4326")
-    # convert to british national grid
+    # convert to british national grid (metric, locally accurate; NI is outside formal area of use but math is well-behaved)
     df = df.to_crs("EPSG:27700")
     return df
 

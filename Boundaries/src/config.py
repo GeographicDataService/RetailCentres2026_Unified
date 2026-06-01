@@ -17,6 +17,7 @@ from typing import Optional
 DATA_DIR = Path("data")
 INPUTS_DIR = DATA_DIR / "inputs"
 RUNS_DIR = DATA_DIR / "outputs" / "runs"
+ID_LOOKUPS_DIR = DATA_DIR / "outputs" / "id_lookups"
 INTERMEDIATE_DIR = DATA_DIR / "intermediate"
 BOUNDARIES_DIR = INPUTS_DIR / "boundaries"
 LANDUSE_DIR = INPUTS_DIR / "landuse"
@@ -43,6 +44,11 @@ ONSPD_DIR = INPUTS_DIR / "onspd"
 
 # Filter ID paths
 FILTER_IDS_PATH = INTERMEDIATE_DIR / "poi_filtered" / "quality_filter_ids.parquet"
+
+# Stable RC_ID restore lookup. Built from retailcentre_bounds_uk_email.parquet
+# and the deterministic generated-ID output. Applied when creating workshop files.
+RC_ID_RESTORE_LOOKUP_PATH = ID_LOOKUPS_DIR / "rc_id_restore_lookup_email.parquet"
+RC_ID_RESTORE_BBOX_TOLERANCE_M = 2.0
 
 
 # ========================================
