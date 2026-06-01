@@ -8,10 +8,14 @@ Non-sub-area centres get the same value in both columns.
 
 import os
 import re
+import sys
 import warnings
 import numpy as np
 import pandas as pd
-import geopandas as gpd
+
+# This script lives in scripts/; the pipeline modules live in the parent dir.
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_DIR)
 
 from generate_names import (
     load_data,
@@ -22,7 +26,7 @@ from generate_names import (
 
 warnings.filterwarnings("ignore")
 
-EXPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports")
+EXPORTS_DIR = os.path.join(PROJECT_DIR, "exports")
 
 
 def run():

@@ -4,7 +4,21 @@ Python pipeline for assigning place names and classifications to UK retail centr
 
 ## Pipeline
 
-The pipeline runs in two stages:
+Run the stages **in this order** from the project root:
+
+| Step | Command | Purpose |
+|------|---------|---------|
+| 0 (setup, once) | `python download_data.py` | Download reference boundary data into `data/` (see [Setup](#setup)) |
+| 1 | `python naming.py` | Build the naming lookup tables → `exports/RC_Naming_*.csv` |
+| 2 | `python generate_names.py` | Assemble the final names → `exports/rc2025_named.{gpkg,parquet}` |
+
+Stages 1 and 2 can be run together with the orchestrator:
+
+```bash
+python 0_run_all.py
+```
+
+Stage detail:
 
 1. **`naming.py`** — Builds naming lookup tables by spatially matching centres against reference boundaries and gazetteers:
    - ONS naming (LA, County, Region, Neighbourhood)
@@ -52,11 +66,12 @@ All other input data (retail centre polygons, Foursquare POI) is bundled in `dat
 source .venv/bin/activate
 pip install geopandas fiona pandas numpy shapely pyogrio
 
-# Stage 1: build lookup tables
-python naming.py
+# Run both stages in order
+python 0_run_all.py
 
-# Stage 2: assemble final names
-python generate_names.py
+# ...or run the stages individually:
+python naming.py            # Stage 1: build lookup tables
+python generate_names.py    # Stage 2: assemble final names
 ```
 
 Output is written to `exports/`:
@@ -66,6 +81,11 @@ Output is written to `exports/`:
 
 ## Other Scripts
 
-- `download_data.py` — downloads ONS/Scottish/NI reference boundary data
-- `compare_names.py` — compares new names against a previous version
-- `naming_comparison.py` — detailed comparison analysis of naming changes
+`download_data.py` (pipeline step 0) downloads the ONS/Scottish/NI reference boundary data — see [Setup](#setup).
+
+Ad-hoc analysis/comparison utilities live in `scripts/` and are not part of the main pipeline. Run them from the project root, e.g. `python scripts/compare_names.py`:
+
+- `scripts/compare_names.py` — compares new names against a previous version
+- `scripts/compare_old_vs_new.py` — old (R) vs new (Python) centre metrics for the paper
+- `scripts/naming_comparison.py` — sub-area "own centre" vs "whole area" name comparison
+- `scripts/find_lcr_centres.py` — filters named centres to the Liverpool City Region

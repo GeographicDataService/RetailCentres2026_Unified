@@ -9,10 +9,8 @@ from OS Data Hub with an API key. The script will flag these.
 """
 
 import os
-import io
 import zipfile
 import requests
-import shutil
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 

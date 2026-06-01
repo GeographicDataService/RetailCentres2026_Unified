@@ -16,7 +16,6 @@ import warnings
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-from shapely.geometry import Point
 from scipy.spatial import cKDTree
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -102,22 +101,6 @@ def pivot_ranked(df, rc_id_col, code_col, name_col, prefix, max_ranks=3):
     return pd.DataFrame(rows)
 
 
-def load_lad_boundaries():
-    """Load LAD boundaries."""
-    p = os.path.join(DATA_DIR, "LAD_Dec2024_UK.gpkg")
-    if os.path.exists(p):
-        print(f"  Loading LAD from {p}")
-        gdf = gpd.read_file(p)
-        gdf = gdf.rename(columns={"LAD24CD": "LAD_CD", "LAD24NM": "LAD_NM"})
-        gdf["LocalAuthorityTY"] = "LAD24CD"
-        gdf.loc[gdf["LAD_CD"].str.startswith("S"), "LocalAuthorityTY"] = "CouncilArea24CD"
-        gdf.loc[gdf["LAD_CD"].str.startswith("N"), "LocalAuthorityTY"] = "LGD14CD"
-        return gdf[["LAD_CD", "LAD_NM", "LocalAuthorityTY", "geometry"]]
-    print("  WARNING: LAD boundaries not found")
-    return None
-
-
-
 def load_neighbourhood_boundaries():
     """Load MSOA (E&W) + IZ (Scotland) + SOA (NI)."""
     parts = []
@@ -170,7 +153,8 @@ def load_neighbourhood_boundaries():
 
 def generate_ons_naming(rc):
     """
-    ONS Naming: spatial intersection of centres with LAD, County, BUA, Neighbourhood.
+    ONS Naming: LA/County/Region come from pre-joined columns on the input;
+    BUA and Neighbourhood are derived by spatial intersection.
     Produces RC_Naming_ONS.csv.
     """
     print("\n=== 1a. ONS Naming ===")

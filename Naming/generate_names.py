@@ -12,7 +12,6 @@ Reads lookup CSVs from exports/ and the input gpkg.
 """
 
 import os
-import re
 import warnings
 import numpy as np
 import pandas as pd
@@ -782,7 +781,6 @@ def generate_names():
             if not mask.any():
                 continue
             # Only use OSM name where OS internal didn't provide one
-            current = level2.loc[mask, "nearest"].iloc[0]
             os_row = os_internal[os_internal["RC_ID"] == row["RC_ID"]]
             has_os_internal = False
             if len(os_row) > 0:
