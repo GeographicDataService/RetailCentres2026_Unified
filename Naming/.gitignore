@@ -1,0 +1,19 @@
+# Input data
+data/
+*.gpkg
+*.parquet
+*.zip
+
+# Output data
+exports/
+
+# R reference repo (has its own git)
+Retail-Centre-Boundaries/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Windows zone identifiers
+*:Zone.Identifier

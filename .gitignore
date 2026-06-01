@@ -1,0 +1,12 @@
+# Python environment & build artifacts
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Caches
+cache/
+.cache/

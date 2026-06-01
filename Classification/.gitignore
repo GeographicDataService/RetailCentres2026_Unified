@@ -1,0 +1,22 @@
+output/*
+!output/.gitkeep
+geo/
+docs/
+figure/
+old/
+
+# Data (never commit)
+data/
+data/**
+data
+*.csv
+*.zip
+*.parquet
+*.gpkg
+
+
+# OS / editor
+.DS_Store
+
+#compiled python files
+__pycache__/

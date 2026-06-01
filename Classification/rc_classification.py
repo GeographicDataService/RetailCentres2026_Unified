@@ -1,0 +1,815 @@
+import pandas as pd
+import geopandas as gpd
+from pathlib import Path
+import re
+from shapely import wkt
+
+LONDON_METROPOLITAN_NAMES = {
+    "bromley",
+    "croydon",
+    "ealing",
+    "shepherds bush",
+    "wood green",
+    "harrow",
+    "romford",
+    "uxbridge",
+    "hounslow",
+    "kingston",
+    "stratford",
+    "ilford",
+    "sutton",
+    "canary wharf",
+    "wembley",
+    "woolwich",
+    "lewisham",
+}
+
+LONDON_METROPOLITAN_MANUAL_RC_IDS = {"898"} # Brent Cross, as it is not showing in the town centre boundary
+
+LONDON_TOWN_CENTRE_ALIASES = {
+    "shepherd s bush": "shepherds bush town centre",
+    "kingston upon thames": "kingston",
+    "canary wharf and docklands": "canary wharf",
+}
+
+LONDON_MANUAL_OVERRIDE_EXCLUDED_CLASSES = {
+    "Retail Park",
+    "Small Retail Park",
+    "Large Retail Park",
+    "Small Shopping Centre",
+    "Large Shopping Centre",
+}
+
+#####-----1. Hierarchical Classification Functions -----#####
+def apply_hierarchical_classification(
+    df: pd.DataFrame,
+    retail_park_rc_ids=None,
+    id_col: str = "RC_ID",
+    retailN_col: str = "tr_retailN",
+) -> pd.DataFrame:
+    df = df.copy()
+    retail_park_rc_ids = set() if retail_park_rc_ids is None else set(retail_park_rc_ids)
+
+    if retailN_col not in df.columns and "tr_retailN" not in df.columns:
+        raise KeyError(f"retailN_col '{retailN_col}' not found in dataframe")
+
+    rank_specs = {
+        "RGN_rank": "RegionName",
+        "CTY_rank": "CountyName",
+        "LAD_rank": "LAD24NM",
+        "BUA_rank": "gsscode",
+    }
+
+    for rank_col, group_col in rank_specs.items():
+        if rank_col in df.columns:
+            continue
+        mask = df[group_col].notna()
+        rank_source = "tr_retailN" if "tr_retailN" in df.columns else retailN_col
+        df.loc[mask, rank_col] = df[mask].groupby(group_col)[rank_source].rank(
+            method="first", ascending=False
+        )
+        df[rank_col] = df[rank_col].fillna(999999)
+
+    if "tr_retailN" not in df.columns:
+        df["tr_retailN"] = df[retailN_col]
+    df["Classification"] = pd.Series(pd.NA, index=df.index)
+
+    def assign(label: str, mask: pd.Series) -> None:
+        df.loc[df["Classification"].isna() & mask, "Classification"] = label
+
+    assign("Regional Centre", (df["RGN_rank"] == 1))
+    assign(
+        "Major Town Centre",
+        (df["LAD_rank"] == 1)
+        & (df["RGN_rank"] != 1)
+        & (df["tr_retailN"] >= 500),
+    )
+    assign(
+        "Town Centre",
+        (df["LAD_rank"] == 1)
+        & (df["RGN_rank"] != 1)
+        & (df["tr_retailN"] < 500),
+    )
+
+    assign(
+        "Market Town",
+        (df["BUA_rank"] == 1)
+        & (df["LAD_rank"] != 1)
+        & (df["RGN_rank"] != 1)
+        & (df["tr_retailN"] >= 150),
+    )
+    assign(
+        "District Centre",
+        (df["BUA_rank"] != 1)
+        & (df["LAD_rank"] != 1)
+        & (df["RGN_rank"] != 1)
+        & (df["tr_retailN"] >= 150),
+    )
+    assign("Local Centre", df["tr_retailN"] < 150)
+
+    df.loc[(df["Classification"] == "Local Centre") & (df["tr_retailN"] < 100), "Classification"] = (
+        "Small Local Centre"
+    )
+
+    df["Classification"] = df["Classification"].fillna("Small Local Centre")
+
+    # Final override: any retail park should end as a retail-park class.
+    retail_park_mask = df["centre_type"].astype(str).str.lower().eq("retail_park")
+
+    df.loc[retail_park_mask, "Classification"] = "Retail Park"
+    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] < 25), "Classification"] = (
+        "Small Retail Park"
+    )
+    df.loc[(df["Classification"] == "Retail Park") & (df["tr_retailN"] >= 25), "Classification"] = (
+        "Large Retail Park" # change this threshold to 25 from 50
+    )
+
+    return df.sort_values(["RegionName", id_col]).reset_index(drop=True)
+
+#####-----2. Manual Edits -----#####
+def apply_manual_edits(
+    df: pd.DataFrame,
+    rcid_lookup_csv: str,
+    manual_hierarchy_csv: str | None = None,
+    group_col: str = "group_id",
+) -> pd.DataFrame:
+    df = df.copy()
+
+    lookup = pd.read_csv(rcid_lookup_csv)
+    old_to_new = {}
+    for old_id, new_id in zip(lookup["RC_ID"], lookup["new_rcid"]):
+        old_to_new.setdefault(old_id, []).append(new_id)
+
+    def map_old_to_new_list(old_id: str):
+        return old_to_new.get(old_id, [old_id])
+
+    has_group = group_col in df.columns
+
+    manual_classification_old = {
+        "RC_EW_2920": "Market Town",
+        "RC_SC_332": "Major Town Centre",
+        "RC_EW_876": "Major Town Centre",
+        "RC_EW_5564": "Major Town Centre",
+        "RC_EW_61": "Major Town Centre",
+        "RC_EW_3096": "Major Town Centre",
+        "RC_EW_3254": "Major Town Centre",
+        "RC_EW_3301": "Major Town Centre",
+        "RC_EW_3476": "Major Town Centre",
+        "RC_EW_3522": "Regional Centre",
+        "RC_EW_2751": "Regional Centre",
+        "RC_SC_280": "Regional Centre",
+    }
+
+    for old_id, cls in manual_classification_old.items():
+        new_ids = map_old_to_new_list(old_id)
+        if has_group:
+            target_groups = df.loc[df["RC_ID"].isin(new_ids), group_col].unique()
+            df.loc[df[group_col].isin(target_groups), "Classification"] = cls
+        else:
+            df.loc[df["RC_ID"].isin(new_ids), "Classification"] = cls
+
+    if manual_hierarchy_csv:
+        manual_path = Path(manual_hierarchy_csv)
+        if manual_path.exists():
+            rc_manual = pd.read_csv(manual_path)
+            rc_manual = rc_manual.loc[
+                rc_manual["H_Classification"] == "Major Town Centre", "RC_ID"
+            ].dropna()
+
+            new_ids = []
+            for old_id in rc_manual.astype(str).unique():
+                new_ids.extend(map_old_to_new_list(old_id))
+
+            if has_group:
+                target_groups = df.loc[df["RC_ID"].isin(new_ids), group_col].unique()
+                mask = df[group_col].isin(target_groups) & (df["Classification"] == "Town Centre")
+            else:
+                mask = df["RC_ID"].isin(new_ids) & (df["Classification"] == "Town Centre")
+
+            df.loc[mask, "Classification"] = "Major Town Centre"
+
+    # --- Manual classification edits (NEW RC_IDs) ---
+    manual_classification_new = {
+        "28": "Regional Centre", # glasgow
+        "5830": "Small Local Centre", # the one in the city of London at the Barbican
+        "3379": "Small Retail Park", # the gemini retail park
+        "1661": "Large Retail Park", # brighton marina
+    }
+
+    for rcid, cls in manual_classification_new.items():
+        if has_group:
+            target_groups = df.loc[df["RC_ID"].astype(str) == str(rcid), group_col].unique()
+            df.loc[df[group_col].isin(target_groups), "Classification"] = cls
+        else:
+            df.loc[df["RC_ID"].astype(str) == str(rcid), "Classification"] = cls
+
+    return df
+
+#####-----3. Shopping Outlet and Anchor Store Counts Overrides -----#####
+def apply_shopping_outlet_overrides(
+    df: pd.DataFrame,
+    rc_uk_path: str,
+    rcid_lookup_csv: str,
+) -> pd.DataFrame:
+    """
+    Manual outlet locations (spatial intersection + explicit ID overrides).
+    rc_uk_path: path to postworkshopcentres.gpkg
+    rcid_lookup_csv: path to rcid_lookup_old_to_new.csv
+    """
+    df = df.copy()
+
+    # --- RC_ID mapping (old -> new) ---
+    lookup = pd.read_csv(rcid_lookup_csv)
+    old_to_new = dict(zip(lookup["RC_ID"], lookup["new_rcid"]))
+
+    def map_rcid(old_id: str) -> str:
+        return old_to_new.get(old_id, old_id)
+
+    # --- Manual outlet locations ---
+    outlets = pd.DataFrame(
+        [
+            ("Regional Shopping Centre", "Westfield London", 51.50768597440922, -0.22088352838801395),
+            ("Regional Shopping Centre", "Metrocentre", 54.957214904105754, -1.6674536751658506),
+            ("Regional Shopping Centre", "Trafford Centre", 53.465100417291744, -2.347637851106119),
+            ("Regional Shopping Centre", "Westfield Stratford City", 51.54425552636472, -0.004332458383472109),
+            ("Regional Shopping Centre", "Bluewater", 51.43912203176112, 0.27160383738290644),
+            ("Regional Shopping Centre", "intu Merry Hill", 52.48138718476229, -2.110658395511001),
+            ("Regional Shopping Centre", "Lakeside Shopping Centre", 51.489406902239956, 0.2853764470235825),
+            ("Regional Shopping Centre", "Meadowhall", 53.41411230589209, -1.4111151687565566),
+            ("Regional Shopping Centre", "East Kilbride Shopping Centre", 55.76021412051323, -4.17708950101207),
+            ("Regional Shopping Centre", "Silverburn Centre", 55.82112954772368, -4.341253330960348),
+            ("Regional Shopping Centre", "intu Braehead", 55.87600450967236, -4.364642953985305),
+            ("Regional Shopping Centre", "White Rose Centre", 53.75868081616114, -1.5734907774777223),
+            ("Large Outlet Shopping Centre", "Ashford Designer Outlet", 51.137387301260496, 0.8801687441992894),
+            ("Large Outlet Shopping Centre", "Astle Park West Bromwich", 52.520103339621166, -1.9960259925402608),
+            ("Large Outlet Shopping Centre", "Bicester Outlet Village", 51.89237714202758, -1.1560770883204268),
+            ("Large Outlet Shopping Centre", "Bideford Atlantic Village", 51.00755545946937, -4.237327761297502),
+            #("Large Outlet Shopping Centre", "Burberry Factory Outlet London", 51.54651001026377, -0.05093197052890261),
+            ("Large Outlet Shopping Centre", "Castleford Junction 32 Outlet", 53.712463797168354, -1.3388364244282458),
+            ("Large Outlet Shopping Centre", "Chatham Dockside Outlet Centre", 51.40160304040388, 0.5377104489852201),
+            ("Large Outlet Shopping Centre", "Cheshire Oaks Designer Outlet", 53.26539272808919, -2.8809029974792315),
+            ("Large Outlet Shopping Centre", "Clacton Factory Outlet", 51.81858769266023, 1.168209463308007),
+            ("Large Outlet Shopping Centre", "Clarks Village Outlet Somerset", 51.12833201493458, -2.741588552823589),
+            ("Large Outlet Shopping Centre", "Dalton Park Outlet", 54.81537131857434, -1.3739226162513756),
+            ("Large Outlet Shopping Centre", "Doncaster Lakeside Village", 53.50769203205623, -1.1135984485990036),
+            ("Large Outlet Shopping Centre", "Dover De Bradelei Wharf Outlet", 51.12211019226935, 1.3141697547138849),
+            ("Large Outlet Shopping Centre", "East Midlands Outlet Junction 28", 53.108083884731556, -1.3126583496100666),
+            ("Large Outlet Shopping Centre", "Freeport Braintree", 51.870070700810075, 0.5714801267433955),
+            ("Large Outlet Shopping Centre", "Freeport Fleetwood Outlet", 53.91786152727727, -3.0118505404061744),
+            ("Large Outlet Shopping Centre", "Freeport Talke Stoke-on-Trent", 53.070597467076176, -2.263078253210015),
+            ("Large Outlet Shopping Centre", "Gloucester Quays Outlet", 51.85953205593224, -2.2516156614946916),
+            ("Large Outlet Shopping Centre", "Hertfordshire Galleria Outlet Shopping", 51.76141229905345, -0.24021860677316503),
+            ("Large Outlet Shopping Centre", "Hornsea Freeport Outlet", 53.898485374967684, -0.1724229262407349),
+            ("Large Outlet Shopping Centre", "Kilver Court Designer Village", 51.19063584650441, -2.5353243560244905),
+            ("Large Outlet Shopping Centre", "London Designer Outlet Wembley", 51.55646778421662, -0.28320440479433673),
+            ("Large Outlet Shopping Centre", "Lowry Outlet Salford Quays", 53.47092253822526, -2.292514874626797),
+            ("Large Outlet Shopping Centre", "Newcastle Royal Quays Outlet", 54.99532901611218, -1.4642812945442476),
+            ("Large Outlet Shopping Centre", "Portsmouth Gunwharf Quays", 50.79546395254288, -1.103824062300293),
+            ("Large Outlet Shopping Centre", "Springfields Spalding Outlet", 52.799438891276665, -0.126329033767297),
+            ("Large Outlet Shopping Centre", "Swindon Designer Outlet", 51.56272470333755, -1.7971899666540831),
+            ("Large Outlet Shopping Centre", "The Mill Outlet Batley", 53.7129199988173, -1.6251337290018772),
+            ("Large Outlet Shopping Centre", "York Designer Outlet", 53.92233415376806, -1.0768705880781113),
+            ("Large Outlet Shopping Centre", "Banbridge Village Outlet", 54.33172185692118, -6.276147653115943),
+            ("Large Outlet Shopping Centre", "Cribbs Causeway", 51.524552488774034, -2.5955220725284307),
+            ("Large Outlet Shopping Centre", "Bridgend Designer Outlets Wales", 51.532410963682594, -3.576839020076668),
+            ("Large Outlet Shopping Centre", "Gretna Gateway Outlet Village", 54.99688074646182, -3.056523264134829),
+            ("Large Outlet Shopping Centre", "Livingston Designer Outlet", 55.88310933797727, -3.520137944032474),
+            ("Large Outlet Shopping Centre", "Sterling Mills Outlet", 56.14927287877639, -3.740053433726151),
+            ("Large Outlet Shopping Centre", "Salford Shopping Centre", 53.48880, -2.28913),  # Salford      
+        ],
+        columns=["SubType", "Name", "Lat", "Lon"],
+    )
+    outlets["Type"] = "Out of Town Shopping Centres"
+
+    outlets_gdf = gpd.GeoDataFrame(
+        outlets,
+        geometry=gpd.points_from_xy(outlets["Lon"], outlets["Lat"]),
+        crs="EPSG:4326",
+    )
+
+    rc_uk = gpd.read_file(rc_uk_path)
+    outlets_gdf = outlets_gdf.to_crs(rc_uk.crs)
+
+    outlets_joined = gpd.sjoin(
+        outlets_gdf,
+        rc_uk[["RC_ID", "geometry"]],
+        how="left",
+        predicate="intersects",
+    )
+    outlets_tag = outlets_joined[["Type", "RC_ID"]].dropna(subset=["RC_ID"])
+
+    manual_outlet_rcids_old = {
+        "Ashford Designer Outlet": "RC_EW_1312",
+        "Chatham Dockside Outlet Centre": "RC_EW_1529",
+        "Doncaster Lakeside Village": "RC_EW_762",
+        "Swindon Designer Outlet": "RC_EW_3751",
+        "Springfields Spalding Outlet": "RC_EW_955",
+    }
+
+    manual_override = outlets_gdf[outlets_gdf["Name"].isin(manual_outlet_rcids_old)].copy()
+    manual_override["RC_ID"] = manual_override["Name"].map(manual_outlet_rcids_old).map(map_rcid)
+    manual_override = manual_override[["Type", "RC_ID"]].dropna(subset=["RC_ID"])
+
+    outlets_tag = pd.concat([outlets_tag, manual_override], ignore_index=True)
+    outlets_tag = outlets_tag.drop_duplicates(subset=["RC_ID"])
+
+    df.loc[df["RC_ID"].isin(outlets_tag["RC_ID"]), "Classification"] = "Out of Town Shopping Centres"
+    out_of_town_mask = df["Classification"].isin(["Out of Town Shopping Centres"])
+    df.loc[out_of_town_mask & (df["tr_retailN"] < 25), "Classification"] = "Small Shopping Centre"
+    df.loc[out_of_town_mask & (df["tr_retailN"] >= 25), "Classification"] = "Large Shopping Centre"
+
+    return df
+
+
+def apply_anchor_overrides(
+    df: pd.DataFrame,
+    district_to_town_threshold: int,
+    anchor_col: str = "anchor_counts",
+) -> pd.DataFrame:
+    df = df.copy()
+    if anchor_col not in df.columns:
+        print(
+            f"---3b. Anchor override skipped: column '{anchor_col}' not found."
+        )
+        return df
+
+    mask = (df["Classification"] == "District Centre") & (
+        pd.to_numeric(df[anchor_col], errors="coerce").fillna(0) >= district_to_town_threshold
+    )
+    promoted = int(mask.sum())
+    df.loc[mask, "Classification"] = "Town Centre"
+    print(
+        f"---3b. Anchor override applied with threshold={district_to_town_threshold}: "
+        f"promoted {promoted} District Centre -> Town Centre."
+    )
+    return df
+
+
+def apply_london_split_override(
+    df: pd.DataFrame,
+    *,
+    region_name: str = "London",
+    region_col: str = "RegionName",
+    id_col: str = "RC_ID",
+    retailN_col: str = "tr_retailN",
+) -> pd.DataFrame:
+    """
+    Reclassify London rows using split-level POI counts (row-level tr_retailN)
+    instead of grouped totals, while preserving existing Regional Centre labels.
+    """
+    df = df.copy()
+    required = {region_col, id_col, retailN_col, "Classification"}
+    if not required.issubset(df.columns):
+        return df
+
+    london_mask = df[region_col].eq(region_name)
+    if not london_mask.any():
+        return df
+
+    london_recalc = apply_hierarchical_classification(
+        df.loc[london_mask].copy(),
+        id_col=id_col,
+        retailN_col=retailN_col,
+    )
+    recalc_map = london_recalc.set_index(id_col)["Classification"]
+
+    hierarchy_classes = {
+        "Regional Centre",
+        "Major Town Centre",
+        "Town Centre",
+        "Market Town",
+        "District Centre",
+        "Local Centre",
+        "Small Local Centre",
+    }
+    overwrite_mask = (
+        london_mask
+        & df["Classification"].isin(hierarchy_classes)
+        & df["Classification"].ne("Regional Centre")
+    )
+
+    proposed = df.loc[overwrite_mask, id_col].map(recalc_map)
+    proposed = proposed.where(
+        proposed.ne("Regional Centre"),
+        df.loc[overwrite_mask, "Classification"],
+    )
+    changed = int((proposed.fillna(df.loc[overwrite_mask, "Classification"]) != df.loc[overwrite_mask, "Classification"]).sum())
+    df.loc[overwrite_mask, "Classification"] = proposed.fillna(df.loc[overwrite_mask, "Classification"])
+    print(
+        f"---3a. London split override applied: updated {changed} classifications."
+    )
+    return df
+
+
+def _normalise_centre_name(value: str) -> str:
+    if pd.isna(value):
+        return ""
+    value = str(value).strip().lower()
+    value = value.replace("&", "and")
+    value = re.sub(r"[^\w\s]", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return LONDON_TOWN_CENTRE_ALIASES.get(value, value)
+
+
+def apply_london_metropolitan_manual_override(
+    df: gpd.GeoDataFrame,
+    *,
+    london_town_centres_path: str | None = None,
+    london_town_centres_layer: str | None = None,
+    region_name: str = "London",
+    region_col: str = "RegionName",
+    class_col: str = "Classification",
+    sitename_col: str = "sitename",
+    min_overlap_ratio: float = 0.05,
+) -> gpd.GeoDataFrame:
+    """
+    Match London retail-centre polygons to the London town-centre boundary file
+    and use matched sitenames for manual London upgrades/downgrades.
+
+    Only matched non-metropolitan centres are downgraded from Major Town Centre
+    to Town Centre. Unmatched London centres are left unchanged.
+    """
+    df = df.copy()
+
+    if (
+        london_town_centres_path is None
+        or region_col not in df.columns
+        or class_col not in df.columns
+        or "geometry" not in df.columns
+    ):
+        return df
+
+    london_mask = df[region_col].eq(region_name)
+    if not london_mask.any():
+        return df
+
+    london_df = df.loc[london_mask].copy()
+    london_df = london_df.loc[london_df.geometry.notna()].copy()
+    if london_df.empty:
+        return df
+
+    tc_path = Path(london_town_centres_path)
+    if not tc_path.exists():
+        print(f"---3c. London metropolitan manual override skipped: {tc_path} not found.")
+        return df
+
+    tc_gdf = gpd.read_file(tc_path, layer=london_town_centres_layer)
+    if sitename_col not in tc_gdf.columns:
+        print(
+            f"---3c. London metropolitan manual override skipped: "
+            f"column '{sitename_col}' not found in {tc_path}."
+        )
+        return df
+
+    tc_gdf = tc_gdf.loc[tc_gdf.geometry.notna()].copy()
+    tc_gdf = tc_gdf.to_crs(london_df.crs)
+    tc_gdf["matched_name"] = tc_gdf[sitename_col].map(_normalise_centre_name)
+    tc_gdf = tc_gdf.loc[tc_gdf["matched_name"] != ""].copy()
+    if tc_gdf.empty:
+        print("---3c. London metropolitan manual override skipped: no valid sitename geometries.")
+        return df
+
+    tc_gdf["tc_area"] = tc_gdf.geometry.area
+    london_df["rc_area"] = london_df.geometry.area
+
+    overlaps = gpd.overlay(
+        london_df[["RC_ID", "rc_area", "geometry"]],
+        tc_gdf[[sitename_col, "matched_name", "tc_area", "geometry"]],
+        how="intersection",
+    )
+    if overlaps.empty:
+        print("---3c. London metropolitan manual override skipped: no overlaps found.")
+        return df
+
+    overlaps["overlap_area"] = overlaps.geometry.area
+    overlaps["tc_overlap_ratio"] = overlaps["overlap_area"] / overlaps["tc_area"]
+    overlaps["rc_overlap_ratio"] = overlaps["overlap_area"] / overlaps["rc_area"]
+    overlaps = overlaps.loc[
+        (overlaps["tc_overlap_ratio"] >= min_overlap_ratio)
+        | (overlaps["rc_overlap_ratio"] >= min_overlap_ratio)
+    ].copy()
+    if overlaps.empty:
+        print(
+            "---3c. London metropolitan manual override skipped: "
+            "overlaps found, but none passed threshold."
+        )
+        return df
+
+    best_match = (
+        overlaps.sort_values(
+            ["RC_ID", "overlap_area", "tc_overlap_ratio", "rc_overlap_ratio"],
+            ascending=[True, False, False, False],
+        )
+        .drop_duplicates(subset=["RC_ID"])
+        .copy()
+    )
+
+    name_map = best_match.set_index("RC_ID")[sitename_col].to_dict()
+    df["matched_tc_name"] = df["RC_ID"].map(name_map)
+
+    major_matches = best_match.loc[
+        best_match["matched_name"].isin(LONDON_METROPOLITAN_NAMES)
+    ].copy()
+    if "tr_retailN" in london_df.columns:
+        major_matches = major_matches.merge(
+            london_df[["RC_ID", "tr_retailN"]],
+            on="RC_ID",
+            how="left",
+        )
+        major_matches["tr_retailN"] = pd.to_numeric(
+            major_matches["tr_retailN"], errors="coerce"
+        ).fillna(-1)
+        major_matches = (
+            major_matches.sort_values(
+                ["matched_name", "tr_retailN", "overlap_area", "tc_overlap_ratio", "rc_overlap_ratio"],
+                ascending=[True, False, False, False, False],
+            )
+            .drop_duplicates(subset=["matched_name"])
+            .copy()
+        )
+
+    major_ids = set(major_matches["RC_ID"].astype(str))
+    major_ids.update(LONDON_METROPOLITAN_MANUAL_RC_IDS)
+    downgrade_ids = set(
+        best_match.loc[~best_match["matched_name"].isin(LONDON_METROPOLITAN_NAMES), "RC_ID"]
+        .astype(str)
+    )
+    downgrade_ids.difference_update(LONDON_METROPOLITAN_MANUAL_RC_IDS)
+    excluded_class_mask = df[class_col].isin(LONDON_MANUAL_OVERRIDE_EXCLUDED_CLASSES)
+
+    promote_mask = london_mask & ~excluded_class_mask & df["RC_ID"].astype(str).isin(major_ids)
+    downgrade_mask = (
+        london_mask
+        & ~excluded_class_mask
+        & df["RC_ID"].astype(str).isin(downgrade_ids)
+        & df[class_col].eq("Major Town Centre")
+    )
+
+    df.loc[promote_mask, class_col] = "Major Town Centre"
+    df.loc[downgrade_mask, class_col] = "Town Centre"
+
+    print(
+        f"---3c. London metropolitan manual override: "
+        f"matched {len(best_match)} London centres, "
+        f"promoted {int(promote_mask.sum())} rows to Major Town Centre, "
+        f"downgraded {int(downgrade_mask.sum())} matched rows to Town Centre."
+    )
+    return df
+
+
+#####-----4. Classification with Grouping -----#####
+def classify_with_grouping(
+    rc_geo: pd.DataFrame,
+    rc_split: pd.DataFrame,
+    parent_col: str = "Parent_ID",
+    split_col: str = "was_split",
+    retailN_col: str = "tr_retailN",
+    *,
+    rcid_lookup_csv: str,
+    rc_uk_path: str,
+    manual_hierarchy_csv: str | None = None,
+    london_split_override_enabled: bool = True,
+    london_region_name: str = "London",
+    london_town_centres_path: str | None = None,
+    london_town_centres_layer: str | None = None,
+    london_town_centres_sitename_col: str = "sitename",
+    london_town_centres_min_overlap_ratio: float = 0.05,
+) -> pd.DataFrame:
+    if "tr_retailN" not in rc_geo.columns and retailN_col in rc_geo.columns:
+        rc_geo = rc_geo.copy()
+        rc_geo["tr_retailN"] = rc_geo[retailN_col]
+    elif "tr_retailN" not in rc_geo.columns and "LDC_retailN" in rc_geo.columns:
+        rc_geo = rc_geo.copy()
+        rc_geo["tr_retailN"] = rc_geo["LDC_retailN"]
+
+    # If split columns already exist in rc_geo, skip merging rc_split
+    if split_col in rc_geo.columns and parent_col in rc_geo.columns:
+        df = rc_geo.copy()
+    else:
+        df = rc_geo.merge(
+            rc_split[["RC_ID", split_col, parent_col]],
+            on="RC_ID",
+            how="left"
+        )
+
+    # Handle possible suffixes if columns exist in both inputs
+    if split_col not in df.columns:
+        for candidate in (f"{split_col}_x", f"{split_col}_y"):
+            if candidate in df.columns:
+                df = df.rename(columns={candidate: split_col})
+                break
+    if parent_col not in df.columns:
+        for candidate in (f"{parent_col}_x", f"{parent_col}_y"):
+            if candidate in df.columns:
+                df = df.rename(columns={candidate: parent_col})
+                break
+
+    # if split file brings its own geometry, keep the rc_geo geometry
+    if "geometry" not in df.columns and "geometry_x" in df.columns:
+        df = df.rename(columns={"geometry_x": "geometry"})
+        df = df.drop(columns=["geometry_y"], errors="ignore")
+
+    # 1) build group_id
+    is_split = df[split_col].astype(str).str.lower().isin(["true", "1", "yes"])
+    df["group_id"] = df["RC_ID"].astype(str)
+    df.loc[is_split, "group_id"] = "P_" + df.loc[is_split, parent_col].astype(str)
+
+    # 2) build group-level table
+    group_df = (
+        df.groupby("group_id", dropna=False)
+          .agg(
+              group_tri_retailN=("tr_retailN", "sum"),
+              RegionName=("RegionName", "first"),
+              CountyName=("CountyName", "first"),
+              LAD24NM=("LAD24NM", "first"),
+              gsscode=("gsscode", "first"),
+              centre_type=("centre_type", "first"),
+          )
+          .reset_index()
+    )
+
+    # 3) classify at GROUP level
+    group_df = apply_hierarchical_classification(
+        group_df,
+        id_col="group_id",
+        retailN_col="group_tri_retailN",
+    )
+    group_df.rename(
+        columns={
+            "RGN_rank": "group_RGN_rank",
+            "CTY_rank": "group_CTY_rank",
+            "LAD_rank": "group_LAD_rank",
+            "BUA_rank": "group_BUA_rank",
+        },
+        inplace=True,
+    )
+    # 4) merge group results back
+    df = df.merge(
+        group_df[
+            [
+                "group_id",
+                "group_tri_retailN",
+                "group_RGN_rank",
+                "group_CTY_rank",
+                "group_LAD_rank",
+                "group_BUA_rank",
+                "Classification",
+            ]
+        ],
+        on="group_id",
+        how="left",
+    )
+
+    # 5) apply overrides on row level
+    df = apply_manual_edits(
+        df,
+        rcid_lookup_csv=rcid_lookup_csv,
+        manual_hierarchy_csv=manual_hierarchy_csv,
+    )
+    df = apply_shopping_outlet_overrides(
+        df,
+        rc_uk_path=rc_uk_path,
+        rcid_lookup_csv=rcid_lookup_csv,
+    )
+    if london_split_override_enabled:
+        df = apply_london_split_override(
+            df,
+            region_name=london_region_name,
+            region_col="RegionName",
+            id_col="RC_ID",
+            retailN_col="tr_retailN",
+        )
+    df = apply_london_metropolitan_manual_override(
+        df,
+        london_town_centres_path=london_town_centres_path,
+        london_town_centres_layer=london_town_centres_layer,
+        region_name=london_region_name,
+        region_col="RegionName",
+        class_col="Classification",
+        sitename_col=london_town_centres_sitename_col,
+        min_overlap_ratio=london_town_centres_min_overlap_ratio,
+    )
+
+    return df
+
+
+def _maybe_parse_wkt(series: pd.Series) -> pd.Series:
+    return series.apply(lambda geom: wkt.loads(geom) if isinstance(geom, str) else geom)
+
+
+def _load_rc_geo(lookups_csv: str, counts_csv: str, crs: str) -> gpd.GeoDataFrame:
+    rc_lookups = pd.read_csv(lookups_csv)
+    rc_counts = pd.read_csv(counts_csv)
+
+    rc = rc_counts.merge(
+        rc_lookups.drop(columns=["geometry"], errors="ignore"),
+        on="RC_ID",
+        how="left",
+    )
+
+    # only pull geometry from lookups if rc_ldc doesn't already provide it
+    if "geometry" not in rc.columns and "geometry" in rc_lookups.columns:
+        rc = rc.merge(rc_lookups[["RC_ID", "geometry"]], on="RC_ID", how="left")
+
+    if "geometry" in rc.columns:
+        rc["geometry"] = _maybe_parse_wkt(rc["geometry"])
+        return gpd.GeoDataFrame(rc, geometry="geometry", crs=crs)
+
+    # no geometry available; return plain DataFrame
+    return rc
+
+
+#####----- Main Execution -----#####
+def run_classification(
+    *,
+    rc_lookups_csv: str,
+    rc_counts_csv: str | None = None,
+    split_path: str,
+    split_parent_col: str,
+    split_flag_col: str,
+    output_gpkg: str,
+    crs: str,
+    retailN_col: str,
+    rcid_lookup_csv: str,
+    rc_uk_path: str,
+    manual_hierarchy_csv: str | None = None,
+    anchor_district_to_town_threshold: int,
+    london_split_override_enabled: bool = True,
+    london_region_name: str = "London",
+    london_town_centres_path: str | None = None,
+    london_town_centres_layer: str | None = None,
+    london_town_centres_sitename_col: str = "sitename",
+    london_town_centres_min_overlap_ratio: float = 0.05,
+    rc_ldc_csv: str | None = None,
+):
+    counts_csv = rc_counts_csv or rc_ldc_csv
+    if counts_csv is None:
+        raise TypeError("run_classification requires rc_counts_csv")
+    rc_geo = _load_rc_geo(rc_lookups_csv, counts_csv, crs)
+
+    if "tr_retailN" not in rc_geo.columns:
+        if retailN_col not in rc_geo.columns:
+            raise KeyError(f"retailN_col '{retailN_col}' not found in dataframe")
+        rc_geo["tr_retailN"] = rc_geo[retailN_col]
+
+    if Path(split_path).exists():
+        split_df = gpd.read_file(split_path)
+        df_out = classify_with_grouping(
+            rc_geo=rc_geo,
+            rc_split=split_df,
+            parent_col=split_parent_col,
+            split_col=split_flag_col,
+            retailN_col=retailN_col,
+            rcid_lookup_csv=rcid_lookup_csv,
+            rc_uk_path=rc_uk_path,
+            manual_hierarchy_csv=manual_hierarchy_csv,
+            london_split_override_enabled=london_split_override_enabled,
+            london_region_name=london_region_name,
+            london_town_centres_path=london_town_centres_path,
+            london_town_centres_layer=london_town_centres_layer,
+            london_town_centres_sitename_col=london_town_centres_sitename_col,
+            london_town_centres_min_overlap_ratio=london_town_centres_min_overlap_ratio,
+        )
+        df_out = apply_anchor_overrides(
+            df_out,
+            anchor_col="anchor_counts",
+            district_to_town_threshold=anchor_district_to_town_threshold,
+        )
+    else:
+        df_out = apply_hierarchical_classification(rc_geo, retailN_col=retailN_col)
+        df_out = apply_manual_edits(
+            df_out,
+            rcid_lookup_csv=rcid_lookup_csv,
+            manual_hierarchy_csv=manual_hierarchy_csv,
+        )
+        df_out = apply_shopping_outlet_overrides(
+            df_out,
+            rc_uk_path=rc_uk_path,
+            rcid_lookup_csv=rcid_lookup_csv,
+        )
+        df_out = apply_anchor_overrides(
+            df_out,
+            anchor_col="anchor_counts",
+            district_to_town_threshold=anchor_district_to_town_threshold,
+        )
+
+    if "geometry" not in df_out.columns and "geometry" in rc_geo.columns:
+        df_out = df_out.merge(rc_geo[["RC_ID", "geometry"]], on="RC_ID", how="left")
+
+    if "geometry" in df_out.columns:
+        df_out["geometry"] = _maybe_parse_wkt(df_out["geometry"])
+        out_gdf = gpd.GeoDataFrame(df_out, geometry="geometry", crs=crs)
+        out_gdf.to_file(output_gpkg, driver="GPKG")
+        print(f"---4. Saved classification to {output_gpkg}")
+    else:
+        output_csv = output_gpkg.replace(".gpkg", ".csv")
+        df_out.to_csv(output_csv, index=False)
+        print(f"---4. Saved classification to {output_csv}")
+
+
+def main() -> None:
+    raise SystemExit("Use 0_run_all.py with config.yaml to run classification.")
+
+
+if __name__ == "__main__":
+    main()

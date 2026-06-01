@@ -1,0 +1,90 @@
+rc_lookup:
+  # Retail centre boundaries (new)
+  rc_path: geo/postworkshopcentres_wgs84.gpkg # CHANGE
+  # Local authority districts (LAD)
+  lad_path: geo/LA/Local_Authority_Districts_May_2024_Boundaries_UK_BFE_-5758551109064458912/LAD_MAY_2024_UK_BFE.shp
+  # Counties boundaries
+  counties_path: geo/Counties/uk_27700.shp
+  # Regions boundaries
+  regions_path: geo/Regions/GB_regions.shp
+  # Built-up areas (BUA)
+  buildup_path: geo/buildup/merged_BUA_dissolved2025.gpkg # CHANGE
+  # Output lookup table
+  output_csv: output/rc_lookups_2025dissolvedBUA.csv
+
+rc_id_lookup:
+  # New RC polygons
+  new_rc_path: geo/postworkshopcentres_wgs84.gpkg
+  # Old RC polygons (for overlap matching)
+  old_rc_path: geo/old_retail_mapmaker/Retail_Boundaries_UK.gpkg
+  # Output mapping old->new RC_ID
+  output_csv: output/rcid_lookup_old_to_new.csv
+  # Metric CRS for area calculations (British National Grid)
+  metric_crs: EPSG:27700
+
+rc_foursquare_anchors:
+  # Retail centre polygons (same as rc_lookup rc_path)
+  rc_path: geo/postworkshopcentres_wgs84.gpkg
+  # Foursquare point GeoParquet
+  foursquare_path: geo/foursquare_quality_retail_filtered.parquet
+  # Output retail centre table with Foursquare-derived anchor_counts/anchor_shops
+  output_csv: output/retail_centers_with_foursquare_anchorN.csv
+
+rc_classification:
+  # Lookups from rc_lookup
+  rc_lookups_csv: output/rc_lookups_2025dissolvedBUA.csv
+  # Counts and anchors from rc_foursquare_anchors
+  rc_counts_csv: output/retail_centers_with_foursquare_anchorN.csv
+  # Split information
+  split_path: geo/postworkshopcentres_wgs84.gpkg
+  split_parent_col: Parent_ID
+  split_flag_col: was_split
+  # Output file # change the output route
+  output_gpkg: output/rc2025_foursquareAnchors_LondonMannual.gpkg
+  # CRS of output
+  crs: EPSG:4326
+  # Column used for tr_retailN
+  retailN_col: Total_POI_count # foursqure
+ # retailN_col: LDC_retailN # LDC
+  # Old-to-new RC_ID mapping used by manual edits and outlet overrides
+  rcid_lookup_csv: output/rcid_lookup_old_to_new.csv
+  # Retail centre boundaries used for outlet spatial override
+  rc_uk_path: geo/postworkshopcentres_wgs84.gpkg
+  # Optional CSV with columns including RC_ID and H_Classification
+  manual_hierarchy_csv: null
+  # Anchor override: promote District Centre -> Town Centre if anchor_counts >= threshold
+  anchor_district_to_town_threshold: 3
+  # London exception: classify London rows from split-level tr_retailN (not grouped sum)
+  london_split_override_enabled: true
+  # Region name used by the split-level override
+  london_region_name: London
+  # Optional London town centre boundaries used for name-based metropolitan override
+  london_town_centres_path: geo/london_town_centre/London_Town_Centres_Boundaries.gpkg
+  london_town_centres_layer: null
+  london_town_centres_sitename_col: sitename
+  london_town_centres_min_overlap_ratio: 0.05
+
+rc_classification_ldc_numbers_comparison:
+  # Same Foursquare anchors, but rank/classify with LDC retail counts.
+  rc_path: geo/postworkshopcentres_wgs84.gpkg
+  ldc_csv:
+  ldc_counts_csv: output/retail_centers_with_ldc_retailN.csv
+  anchor_csv: output/retail_centers_with_foursquare_anchorN.csv
+  rc_lookups_csv: output/rc_lookups_2025dissolvedBUA.csv
+  rc_counts_csv: output/retail_centers_with_foursquare_anchorN.csv
+  split_path: geo/postworkshopcentres_wgs84.gpkg
+  split_parent_col: Parent_ID
+  split_flag_col: was_split
+  retailN_col: LDC_retailN
+  output_gpkg: output/rc2025_foursquareAnchors_LDCNumbers_LondonMannual.gpkg
+  crs: EPSG:4326
+  rcid_lookup_csv: output/rcid_lookup_old_to_new.csv
+  rc_uk_path: geo/postworkshopcentres_wgs84.gpkg
+  manual_hierarchy_csv: null
+  anchor_district_to_town_threshold: 3
+  london_split_override_enabled: true
+  london_region_name: London
+  london_town_centres_path: geo/london_town_centre/London_Town_Centres_Boundaries.gpkg
+  london_town_centres_layer: null
+  london_town_centres_sitename_col: sitename
+  london_town_centres_min_overlap_ratio: 0.05

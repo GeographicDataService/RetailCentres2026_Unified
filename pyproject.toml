@@ -1,0 +1,51 @@
+[project]
+name = "retailcentres-unified"
+version = "0.1.0"
+description = "Unified repo bundling the Boundaries, Classification, and Naming retail-centre projects"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # --- from Boundaries/pyproject.toml (verbatim) ---
+    "community>=1.0.0b1",
+    "contextily>=1.6.2",
+    "duckdb>=1.4.4",
+    "folium>=0.20.0",
+    "geopandas>=1.0.1",
+    "h3>=4.2.2",
+    "igraph>=0.11.8",
+    "leidenalg>=0.10.2",
+    "libpysal>=4.13.0",
+    "networkx>=3.4.2",
+    "nltk>=3.9.1",
+    "openrouteservice>=2.3.3",
+    "osmium>=4.1.1",
+    "osmnx>=2.0.3",
+    "pandas>=2.2.3",
+    "pip>=25.0.1",
+    "polars==1.26.0",
+    "pyarrow>=19.0.1",
+    "pyrosm>=0.6.2",
+    "pytest>=8.4.0",
+    "scikit-learn>=1.6.1",
+    "spopt>=0.6.1",
+    "tqdm>=4.67.1",
+    # --- additions for Classification (rc_*.py, 0_run_all.py) ---
+    "pyyaml>=6.0",
+    "shapely>=2.0",
+    # --- additions for Naming (naming.py, generate_names.py, ...) ---
+    "fiona>=1.10",
+    "matplotlib>=3.8",
+    "numpy>=2.0",
+    "pyogrio>=0.10",
+    "requests>=2.32",
+    "scipy>=1.13",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# Workspace has no own Python package; subfolders (Boundaries, Classification,
+# Naming) are run from their own paths and must NOT be auto-discovered.
+packages = []
