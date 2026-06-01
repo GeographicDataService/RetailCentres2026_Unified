@@ -8,8 +8,6 @@ A single git repository bundling the three active UK Retail Centre projects unde
 | [`Classification/`](Classification/) | Classification, lookup tables, retail counts (config-driven) | [`Classification/0_run_all.py`](Classification/0_run_all.py) |
 | [`Naming/`](Naming/) | Place-name & classification assignment for centre polygons | [`Naming/naming.py`](Naming/naming.py) |
 
-This repository was unified from three previously separate projects (`RetailCentres`, `RetailCenter`, `RetailCentres_Naming`), renamed to `Boundaries`, `Classification`, and `Naming`. Their full commit histories are preserved in this repo. The canonical originals at `/home/ogoodwin/projects/{RetailCentre,RetailCentres,RetailCentres_Naming}/` are unmodified. `RetailCentres_Paper` (the Quarto manuscript) is intentionally excluded.
-
 ## Code Structure
 ```
 RetailCentres_Unified2/
@@ -53,7 +51,7 @@ RetailCentres_Unified2/
 A single shared venv at the workspace root services all three subprojects.
 
 ```bash
-# From RetailCentres_Unified2/
+# From RetailCentres_Unified/
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -e .
@@ -68,7 +66,18 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-### Run Pipelines
+### Run everything (single command)
+
+[`run_all.sh`](run_all.sh) runs all stages in order and copies each stage's output into the next stage's input:
+
+```bash
+source .venv/bin/activate
+./run_all.sh my_run
+```
+
+Or run the stages individually:
+
+### Run Pipelines (individually)
 
 **Boundary generation** (`Boundaries/`):
 ```bash
@@ -79,6 +88,14 @@ python Boundaries/src/main.py --run_name "test_run"
 python Boundaries/src/main.py --run_name "test_run" --use_presaved_filters
 ```
 See [`Boundaries/method.md`](Boundaries/method.md) for methodology and [`Boundaries/README.md`](Boundaries/README.md) for input-data acquisition (Foursquare POI, OSM landuse, ONSPD, LAD boundaries).
+
+**Boundary post-processing** (`Boundaries/`): turn a network-generation run into the final bounds GPKGs that Classification consumes (split IDs with `Parent_ID`, optional legacy RC_ID remap):
+```bash
+cd Boundaries
+python scripts/boundary_postprocessing.py --run-dir data/outputs/runs/test_run
+# add --legacy-ids to remap workshop split-centre RC_IDs onto the legacy bounds
+```
+Auto-detects the split (`splitthresh_1500`) and nosplit (`splitthresh_9999*`) final centres, filtered POIs, and any retail-parks layer in the run directory; writes a timestamped folder under `data/outputs/boundary_postprocessing/`.
 
 **Classification** (`Classification/`):
 ```bash
@@ -106,15 +123,7 @@ pytest Boundaries/tests
 
 ## Acquiring Input Data
 
-Each subproject has its own input-data needs documented in its own README. The most data-heavy is `Boundaries/`:
+Each subproject has its own input-data needs documented in its own README. 
 
-- **GeoDS members:** packaged inputs zip on SharePoint — see [`Boundaries/README.md`](Boundaries/README.md) → *Quick Start (GeoDS Members)*.
-- **Manual:** Foursquare POI, OSM landuse (via `python Boundaries/src/grab_osm_landuse.py --landuse both`), ONSPD postcodes, ONS Local Authority + Country boundaries.
 
-`Classification/` consumes pre-delineated boundaries plus an LDC historical-snapshot CSV — paths configured in `Classification/config.yaml`. `Naming/` consumes the classified centre polygons output by `Classification/`, plus the gazetteers fetched by `download_data.py`.
 
-## Notes
-
-- The canonical originals at `/home/ogoodwin/projects/RetailCenter`, `/home/ogoodwin/projects/RetailCentres`, and `/home/ogoodwin/projects/RetailCentres_Naming` remain unchanged; this unified repo carries copies of their source plus their preserved git histories.
-- `.venv/`, `cache/`, `__pycache__/`, and `.ipynb_checkpoints/` were excluded during the copy and are regenerated on demand.
-- Each subfolder retains its own original `README.md` — refer to those for project-specific details.
