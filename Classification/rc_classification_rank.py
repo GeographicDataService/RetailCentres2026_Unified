@@ -44,7 +44,7 @@ def build_rank_table(
     split_parent_col: str = "Parent_ID",
     split_flag_col: str = "was_split",
     output_csv: str = "output/rc_rank_table.csv",
-    crs: str = "EPSG:27700",
+    crs: str = "EPSG:4326",
 ) -> pd.DataFrame:
     df = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)
 

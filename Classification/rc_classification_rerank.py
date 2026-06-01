@@ -436,7 +436,7 @@ def run_classification(
     split_parent_col="Parent_ID",
     split_flag_col="was_split",
     output_gpkg= None,
-    crs="EPSG:27700",
+    crs="EPSG:4326",
     retailN_col="LDC_retailN",
 ):
     rc_geo = _load_rc_geo(rc_lookups_csv, rc_ldc_csv, crs)

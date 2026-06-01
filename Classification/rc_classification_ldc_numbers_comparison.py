@@ -125,7 +125,7 @@ def main() -> None:
         split_parent_col="Parent_ID",
         split_flag_col="was_split",
         output_gpkg="output/rc2025_foursquareAnchors_LDCNumbers.gpkg",
-        crs="EPSG:27700",
+        crs="EPSG:4326",
         retailN_col="LDC_retailN",
         rcid_lookup_csv="output/rcid_lookup_old_to_new.csv",
         rc_uk_path="geo/postworkshopcentres.gpkg",
