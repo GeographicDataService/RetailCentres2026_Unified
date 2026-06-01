@@ -2,7 +2,7 @@
 
 This repo builds retail-centre lookup tables, counts retail activity, and runs the final centre classification.
 
-Note: the old-to-new `RC_ID` lookup does not need to be rebuilt every time. It normally only needs to be run once for a given set of retail-centre boundaries. After that, the `build_rcid_lookup(...)` step in [0_run_all.py](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/0_run_all.py) can be skipped unless the source retail-centre polygons change.
+Note: the old-to-new `RC_ID` lookup does not need to be rebuilt every time. It normally only needs to be run once for a given set of retail-centre boundaries. After that, the `build_rcid_lookup(...)` step in [0_run_all.py](0_run_all.py) can be skipped unless the source retail-centre polygons change.
 
 ## What It Does
 
@@ -15,16 +15,16 @@ Running the pipeline does 4 things:
 
 ## Main Files
 
-- [0_run_all.py](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/0_run_all.py): main entry point
-- [config.yaml](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/config.yaml): all input/output paths and settings
-- [rc_classification.py](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/rc_classification.py): classification logic
+- [0_run_all.py](0_run_all.py): main entry point
+- [config.yaml](config.yaml): all input/output paths and settings
+- [rc_classification.py](rc_classification.py): classification logic
 
 ## Source Files
 
-With the current [config.yaml](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/config.yaml), the main input source files are:
+With the current [config.yaml](config.yaml), the main input source files are:
 
-- retail-centre polygons: `geo/postworkshopcentres_camdenmerge.gpkg`
-- old retail-centre polygons for ID matching: `geo/old_retail_mapmaker/retail_boundaries_uk.gpkg`
+- retail-centre polygons: `geo/postworkshopcentres_wgs84.gpkg`
+- old retail-centre polygons for ID matching: `geo/old_retail_mapmaker/Retail_Boundaries_UK.gpkg`
 - LAD boundaries: `geo/LA/Local_Authority_Districts_May_2024_Boundaries_UK_BFE_-5758551109064458912/LAD_MAY_2024_UK_BFE.shp`
 - county boundaries: `geo/Counties/uk_27700.shp`
 - region boundaries: `geo/Regions/GB_regions.shp`
@@ -47,7 +47,7 @@ Depending on your environment, `geopandas` may also require Fiona / GDAL / pyogr
 
 ## Before Running
 
-Check [config.yaml](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/config.yaml) and make sure these paths are correct:
+Check [config.yaml](config.yaml) and make sure these paths are correct:
 
 - retail-centre boundary file
 - old retail boundary file
@@ -101,5 +101,6 @@ The London step does a manual override after the split-level London reranking.
 
 ## Notes
 
-- The pipeline is config-driven, so path changes should normally be made in [config.yaml](/Users/carolyin/Documents/Document_Work/GeoDS/RetailCenter/config.yaml), not in the Python files.
+- The pipeline is config-driven, so path changes should normally be made in [config.yaml](config.yaml), not in the Python files.
 - The current workflow uses `tr_retailN` as the default internal metric, but the actual run is still controlled by `rc_classification.retailN_col` in the config.
+- The `notebooks/` folder holds exploratory/analysis notebooks. They are not part of the pipeline and are not run by `0_run_all.py`.
