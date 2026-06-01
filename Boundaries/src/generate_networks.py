@@ -345,7 +345,7 @@ def generate_networks(
     # longer applied here. It is keyed by post-rank generated RC_IDs, which differ
     # between split-threshold sweeps and silently glued unrelated centres in the
     # nosplit run (e.g. Milton Keynes + Bexhill at RC_ID 130). The merge has been
-    # moved to scripts/create_workshop_files_v2.py, applied to the split-run
+    # moved to scripts/boundary_postprocessing.py, applied to the split-run
     # centres after RC_ID restore so it can be keyed by stable RC_IDs.
 
     dissolved_combined.to_crs("EPSG:4326").to_parquet(f"{save_folder}/4_finalcentres.parquet")

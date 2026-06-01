@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 """
-Script to create postworkshopcentres GPKG files and filtered POI geopackage.
-V2: All centres use split IDs, split centres get Parent_ID starting at 1.
+Boundary post-processing: turn a pipeline run into the final bounds outputs,
+ready for classification.
+
+Reads a network-generation run (split + nosplit final centres, POIs, and an
+optional retail-parks polygon layer) and writes the deliverable GPKGs into a
+timestamped folder under ``data/outputs/boundary_postprocessing/``.
+
+All centres use split IDs; split centres get Parent_ID starting at 1.
 
 Creates 4 variants:
 1. postworkshopcentres.gpkg - with splits, with category_names
@@ -28,6 +34,11 @@ import re
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_RC_BOUNDS_PATH = REPO_ROOT / "data" / "inputs" / "legacy_rc_bounds.parquet"
 RC_ID_RESTORE_BBOX_TOLERANCE_M = 2.0
+
+# Final bounds outputs (ready for classification) live under data/outputs/, next
+# to the pipeline's other outputs (runs/, arcgis_exports/, id_lookups/). Anchored
+# to REPO_ROOT so the script works regardless of the current working directory.
+DEFAULT_OUTPUT_BASE = REPO_ROOT / "data" / "outputs" / "boundary_postprocessing"
 
 # Camden's two pieces are Leiden-split into adjacent centres. In the un-merged
 # generate_networks output, they sit at generated RC_IDs 130 (north, 631 POIs)
@@ -382,7 +393,7 @@ def apply_legacy_ids(centres: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 def create_workshop_centres(
     split_centres_path: str,
     nosplit_centres_path: str,
-    output_dir: str = "data/forarcgis",
+    output_dir: str | Path = DEFAULT_OUTPUT_BASE,
     legacy_ids: bool = False,
 ):
     """Create 4 variants of postworkshopcentres GPKG files."""
@@ -459,7 +470,7 @@ def create_workshop_centres(
     print("\nAll postworkshopcentres GPKG files created successfully!")
 
 
-def create_filtered_pois(poi_path: str, output_dir: str = "data/forarcgis"):
+def create_filtered_pois(poi_path: str, output_dir: str | Path = DEFAULT_OUTPUT_BASE):
     """Create filtered POI geopackage with just name and full category."""
     import pandas as pd
 
@@ -529,7 +540,7 @@ def create_filtered_pois(poi_path: str, output_dir: str = "data/forarcgis"):
     print("\nFiltered POI geopackage created successfully!")
 
 
-def create_retail_parks_gpkg(retail_parks_path: str, output_dir: str = "data/forarcgis"):
+def create_retail_parks_gpkg(retail_parks_path: str, output_dir: str | Path = DEFAULT_OUTPUT_BASE):
     """Create retail parks geopackage with all attributes."""
 
     output_dir = Path(output_dir)
@@ -556,7 +567,7 @@ def create_retail_parks_gpkg(retail_parks_path: str, output_dir: str = "data/for
 def create_centres_clean(
     split_centres_path: str,
     nosplit_centres_path: str,
-    output_dir: str = "data/forarcgis",
+    output_dir: str | Path = DEFAULT_OUTPUT_BASE,
     legacy_ids: bool = False,
 ):
     """Create clean centres GPKG with only RC_ID and category totals."""
@@ -639,7 +650,7 @@ def create_centres_clean(
 
 def create_retail_parks_clean(
     retail_parks_path: str,
-    output_dir: str = "data/forarcgis"
+    output_dir: str | Path = DEFAULT_OUTPUT_BASE
 ):
     """Create clean retail parks GPKG with name, ID, total POIs, matched brands, and match percentage."""
 
@@ -799,10 +810,10 @@ def auto_find_files(run_dir: Path):
 if __name__ == "__main__":
     # Create timestamped output folder
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_output_dir = Path(f"data/forarcgis/workshop_v2_{timestamp}")
+    default_output_dir = DEFAULT_OUTPUT_BASE / timestamp
 
     parser = argparse.ArgumentParser(
-        description="Create postworkshopcentres GPKG files (V2 - split IDs with Parent_ID)"
+        description="Boundary post-processing: build final bounds GPKGs (split IDs with Parent_ID), ready for classification"
     )
 
     # New simplified interface - just provide run directory
@@ -832,7 +843,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir",
         default=None,
-        help="Output directory (default: timestamped folder in data/forarcgis)"
+        help="Output directory (default: timestamped folder in data/outputs/boundary_postprocessing)"
     )
     parser.add_argument(
         "--legacy-ids",

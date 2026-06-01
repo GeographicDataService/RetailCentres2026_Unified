@@ -93,15 +93,6 @@ python src/main.py --run_name "test_run" --use_presaved_filters
 - Parameter sweep values (min POI thresholds, fill settings, etc.)
 - Feature flags (retail parks, land use filters)
 
-### Format Conversion (for ArcGIS Online)
-```bash
-# Convert to Shapefile
-python src/utils/convtoshp.py output.parquet -f shapefile
-
-# Convert to GeoJSON
-python src/utils/convtoshp.py output.parquet -f geojson
-```
-
 ### Testing
 ```bash
 pytest

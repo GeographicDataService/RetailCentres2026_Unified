@@ -510,12 +510,3 @@ merge_adjacent: [True]                  # Enable/disable merging
 - `big_box_proportion` (float): Fraction of POIs matching big-box brands
 - `osm_retail_overlap` (float): Overlap fraction with OSM retail land use
 
-### Format Conversions
-**Tool:** `src/utils/convtoshp.py`
-
-**Supported Formats:**
-```bash
-python src/utils/convtoshp.py output.parquet -f shapefile  # ESRI Shapefile
-python src/utils/convtoshp.py output.parquet -f geojson    # GeoJSON
-```
-
