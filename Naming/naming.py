@@ -30,7 +30,7 @@ FSQ_PATH = os.path.join(DATA_DIR, "foursquare_quality_retail_filtered.parquet")
 OSM_LANDUSE_PATH = os.path.join(DATA_DIR, "retail_landuse.parquet")
 OSM_NI_PLACES_PATH = os.path.join(DATA_DIR, "osm_ni_places.parquet")
 
-CRS_BNG = "EPSG:27700"
+CRS_BNG = "EPSG:27700"  # Working CRS: British National Grid. NI is outside the formal area of use but pyproj handles the math.
 PREFER_ENGLISH_NAMES = True  # Use English place names instead of Gaelic/Welsh where available
 
 
@@ -706,7 +706,10 @@ def generate_street_naming(rc):
     totals = proportions.groupby("RC_ID")["n"].sum().rename("total")
     proportions = proportions.merge(totals, on="RC_ID")
     proportions["freq"] = proportions["n"] / proportions["total"]
-    proportions = proportions.sort_values(["RC_ID", "freq"], ascending=[True, False])
+    # alphabetic tie break
+    proportions = proportions.sort_values(
+        ["RC_ID", "freq", "street"], ascending=[True, False, True], kind="stable"
+    )
 
     # Keep top 2 per centre
     proportions["rank"] = proportions.groupby("RC_ID").cumcount() + 1
@@ -763,11 +766,14 @@ def generate_street_naming(rc):
             rp_addr["branded"] = rp_addr["address"].apply(_extract_branded)
             branded = rp_addr[rp_addr["branded"].notna()].copy()
             if len(branded) > 0:
+                # alphabetic tie break
                 branded_counts = (
                     branded.groupby(["RC_ID", "branded"])
                     .size()
                     .reset_index(name="n")
-                    .sort_values(["RC_ID", "n"], ascending=[True, False])
+                    .sort_values(
+                        ["RC_ID", "n", "branded"], ascending=[True, False, True], kind="stable"
+                    )
                 )
                 # Keep the most common branded name per park
                 branded_top = branded_counts.groupby("RC_ID").first().reset_index()
@@ -778,11 +784,14 @@ def generate_street_naming(rc):
             # Locality fallback
             rp_locs = rp_addr[rp_addr["locality"].notna()]
             if len(rp_locs) > 0:
+                # alphabetic tie break
                 rp_locality = (
                     rp_locs.groupby(["RC_ID", "locality"])
                     .size()
                     .reset_index(name="n")
-                    .sort_values(["RC_ID", "n"], ascending=[True, False])
+                    .sort_values(
+                        ["RC_ID", "n", "locality"], ascending=[True, False, True], kind="stable"
+                    )
                 )
                 rp_top = rp_locality.groupby("RC_ID").first().reset_index()
                 rp_top = rp_top.rename(columns={"locality": "RetailParkLocality"})
@@ -860,12 +869,15 @@ def generate_address_component_naming(rc):
     # not all locality values — rare ones like "Liverpool One" are useful
     print("  Building exclusion set from top locality values...")
     locality_per_rc = {}
+    # alphabetic tie break
     loc_counts = (
         joined[joined["locality"].notna()]
         .groupby(["RC_ID", "locality"])
         .size()
         .reset_index(name="n")
-        .sort_values(["RC_ID", "n"], ascending=[True, False])
+        .sort_values(
+            ["RC_ID", "n", "locality"], ascending=[True, False, True], kind="stable"
+        )
     )
     for rc_id, group in loc_counts.groupby("RC_ID"):
         top_loc = group.iloc[0]["locality"].strip().lower()
@@ -898,7 +910,13 @@ def generate_address_component_naming(rc):
     )
     # Sum counts per normalised form, keep spelling with highest count
     norm_totals = counts.groupby(["RC_ID", "addr_norm"])["n"].sum().reset_index(name="n_total")
-    best_spelling = counts.sort_values("n", ascending=False).groupby(["RC_ID", "addr_norm"]).first().reset_index()
+    # alphabetic tie break (case-insensitive)
+    best_spelling = (
+        counts.assign(_lc=counts["addr_part"].str.lower())
+        .sort_values(["n", "_lc"], ascending=[False, True], kind="stable")
+        .groupby(["RC_ID", "addr_norm"]).first().reset_index()
+        .drop(columns="_lc")
+    )
     merged = norm_totals.merge(
         best_spelling[["RC_ID", "addr_norm", "addr_part"]],
         on=["RC_ID", "addr_norm"],
@@ -908,7 +926,10 @@ def generate_address_component_naming(rc):
     poi_totals = joined.groupby("RC_ID").size().rename("total")
     merged = merged.merge(poi_totals, on="RC_ID")
     merged["freq"] = merged["n_total"] / merged["total"]
-    merged = merged.sort_values(["RC_ID", "freq"], ascending=[True, False])
+    # alphabetic tie break
+    merged = merged.sort_values(
+        ["RC_ID", "freq", "addr_norm"], ascending=[True, False, True], kind="stable"
+    )
 
     # Keep top 2 per centre
     merged["rank"] = merged.groupby("RC_ID").cumcount() + 1

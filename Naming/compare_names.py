@@ -85,6 +85,7 @@ new_full = gpd.read_file(NEW_PATH)
 new_with_old = new_full.merge(best_match, left_on="RC_ID", right_on="New_RC_ID", how="left")
 new_with_old = new_with_old.drop(columns=["New_RC_ID"])
 
+new_with_old = new_with_old.to_crs("EPSG:4326")
 geo_out = os.path.join(EXPORTS_DIR, "rc2025_named_with_old_names.gpkg")
 new_with_old.to_file(geo_out, driver="GPKG")
 print(f"Saved: {geo_out}")

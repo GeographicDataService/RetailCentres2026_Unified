@@ -24,7 +24,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
 GPKG_PATH = os.path.join(DATA_DIR, "rc2025_foursquare_LondonMannual.gpkg")
-CRS_BNG = "EPSG:27700"
+CRS_BNG = "EPSG:27700"  # Working CRS: British National Grid. NI is outside the formal area of use but pyproj handles the math.
 
 # ─── Sub-area manual names ────────────────────────────────────────────
 # Curated local names for sub-areas in major city centres.
@@ -1073,11 +1073,17 @@ def generate_names():
     name_counts = naming["RC_Name"].value_counts()
     duplicates = name_counts[name_counts > 1].index.tolist()
 
+    retail_n = pd.to_numeric(rc.set_index("RC_ID")["tr_retailN"], errors="coerce").fillna(0)
+
     for dup_name in duplicates:
         dup_mask = naming["RC_Name"] == dup_name
         dup_rows = naming.loc[dup_mask].copy()
         dup_rows["_class_priority"] = dup_rows["Classification"].map(class_priority).fillna(99)
-        dup_indices = dup_rows.sort_values("_class_priority").index.tolist()
+        dup_rows["_retail_n"] = dup_rows["RC_ID"].map(retail_n).fillna(0)
+        # Higher retail count keeps the bare name; class priority dominates
+        dup_indices = dup_rows.sort_values(
+            ["_class_priority", "_retail_n"], ascending=[True, False], kind="stable"
+        ).index.tolist()
         # First (highest-ranked) keeps original name
         for i, idx in enumerate(dup_indices[1:], start=1):
             naming.loc[idx, "RC_Name"] = f"{dup_name} - {i}"
@@ -1101,13 +1107,15 @@ def generate_names():
     priority = ["RC_ID", "RC_Name", "Classification"]
     other_cols = [c for c in rc_named.columns if c not in priority]
     rc_named = rc_named[priority + other_cols]
+    # Reproject to WGS84 for output (ArcGIS Online compatibility).
+    rc_named_out = rc_named.to_crs("EPSG:4326")
     gpkg_path = os.path.join(EXPORTS_DIR, "rc2025_named.gpkg")
-    rc_named.to_file(gpkg_path, driver="GPKG")
+    rc_named_out.to_file(gpkg_path, driver="GPKG")
     print(f"  Saved: {gpkg_path}")
 
     # GeoParquet
     parquet_path = os.path.join(EXPORTS_DIR, "rc2025_named.parquet")
-    rc_named.to_parquet(parquet_path)
+    rc_named_out.to_parquet(parquet_path)
     print(f"  Saved: {parquet_path}")
 
     # Compact public export matching the historical retailcentre_bounds_uk schema.
@@ -1137,6 +1145,8 @@ def generate_names():
         "geometry",
     ]
     compact = compact[compact_cols]
+    # Area_km2 already computed above in 3035 (metres). Reproject to WGS84 for output.
+    compact = compact.to_crs("EPSG:4326")
     compact_gpkg_path = os.path.join(EXPORTS_DIR, "retailcentre_bounds_uk.gpkg")
     compact_parquet_path = os.path.join(EXPORTS_DIR, "retailcentre_bounds_uk.parquet")
     compact.to_file(compact_gpkg_path, driver="GPKG")

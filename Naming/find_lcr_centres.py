@@ -47,8 +47,8 @@ def main():
         OUTPUT_DIR / "lcr_centres.csv", index=False
     )
 
-    # Save filtered GeoParquet
-    lcr_centres.to_parquet(OUTPUT_DIR / "lcr_centres.parquet")
+    # Save filtered GeoParquet (WGS84 for ArcGIS Online compatibility)
+    lcr_centres.to_crs("EPSG:4326").to_parquet(OUTPUT_DIR / "lcr_centres.parquet")
 
     print(f"\nSaved CSV to {OUTPUT_DIR / 'lcr_centres.csv'}")
     print(f"Saved GeoParquet to {OUTPUT_DIR / 'lcr_centres.parquet'}")
