@@ -95,7 +95,7 @@ See [`Boundaries/method.md`](Boundaries/method.md) for methodology and [`Boundar
 ```bash
 cd Boundaries
 python scripts/boundary_postprocessing.py --run-dir data/outputs/runs/test_run
-# add --legacy-ids to remap workshop split-centre RC_IDs onto the legacy bounds
+# add --legacy-ids to remap workshop split-centre RC_IDs onto the IDs which match the published version (The numbering was orignally non-determistic when centres had tied POI totals)
 ```
 Auto-detects the split (`splitthresh_1500`) and nosplit (`splitthresh_9999*`) final centres, filtered POIs, and any retail-parks layer in the run directory; writes a timestamped folder under `data/outputs/boundary_postprocessing/`.
 
