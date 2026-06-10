@@ -20,12 +20,8 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 DATASETS = {
     # ── England & Wales ──
-    "lad_boundaries": {
-        "description": "Local Authority Districts (Dec 2024) UK BFC",
-        "url": "https://open-geography-portalx-ons.hub.arcgis.com/api/download/v1/items/e00959b3cb35408db26e89e08036d8c0/geoPackage?layers=0",
-        "filename": "LAD_Dec2024_UK.gpkg",
-        "subfolder": "",
-    },
+    # Note: Local Authority / County / Region are pre-joined onto the input
+    # centres gpkg, so no LAD boundary file is downloaded here.
     "msoa_boundaries": {
         "description": "MSOA (Dec 2021) England & Wales BGC V3",
         "url": "https://open-geography-portalx-ons.hub.arcgis.com/api/download/v1/items/6b282db29762450881ed5159259a6e4e/geoPackage?layers=0",
@@ -41,26 +37,31 @@ DATASETS = {
         "is_zip": True,
     },
     # ── Northern Ireland ──
-    "ni_soa": {
-        "description": "NI Super Output Areas (2011)",
-        "url": "https://www.nisra.gov.uk/sites/nisra.gov.uk/files/publications/SOA2011_Esri_Shapefile_0.zip",
-        "filename": "NI_SOA2011.zip",
-        "subfolder": "northern_ireland",
-        "is_zip": True,
-    },
+    # NI neighbourhoods use Super Data Zones (SDZ), which the loader globs for
+    # as *SDZ* files. There is no clean direct-download URL, so SDZ is a manual
+    # download — see MANUAL_DATASETS below.
 }
 
 # OS Open Names and Boundary-Line require OS Data Hub registration
 MANUAL_DATASETS = {
     "os_open_names": {
-        "description": "OS Open Names (CSV format, ~106MB zip)",
+        "description": "OS Open Names (GeoPackage format, ~2GB)",
         "instructions": (
             "1. Go to https://osdatahub.os.uk/downloads/open/OpenNames\n"
-            "2. Download the CSV format (opname_csv_gb.zip)\n"
-            "3. Extract to data/os_open_names/ so that data/os_open_names/DATA/ contains CSV files\n"
-            "   and data/os_open_names/DOC/ contains the header file"
+            "2. Download the GeoPackage format\n"
+            "3. Extract to data/os_open_names/ so that\n"
+            "   data/os_open_names/Data/opname_gb.gpkg exists"
         ),
-        "check_path": os.path.join(DATA_DIR, "os_open_names", "DATA"),
+        "check_path": os.path.join(DATA_DIR, "os_open_names", "Data", "opname_gb.gpkg"),
+    },
+    "ni_sdz": {
+        "description": "NI Super Data Zones 2021 (neighbourhood geography)",
+        "instructions": (
+            "1. Go to https://www.nisra.gov.uk/support/geography/northern-ireland-super-data-zones\n"
+            "2. Download the SDZ2021 boundaries (shapefile or GeoPackage)\n"
+            "3. Extract to data/northern_ireland/ so that a *SDZ* .shp/.gpkg file is present"
+        ),
+        "check_path": os.path.join(DATA_DIR, "northern_ireland"),
     },
 }
 

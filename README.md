@@ -1,18 +1,21 @@
 # Retail Centres — Unified Workspace (2026)
 
-A single git repository bundling the three active UK Retail Centre projects under one shared Python environment:
+A single repository for the three subprojects of the 2026 GeoDS UK Retail Centres.
+**Authors:** Owen Goodwin (owen.goodwin@liverpool.ac.uk), Carol Yin (carolyin@liverpool.ac.uk)
+
+**Method adapted from:** [Open Retail Centres: A National Open Data Set of Retail Centre Boundaries and Indicators](https://www.nature.com/articles/s41597-022-01556-3) — *Nature Scientific Data* (2022)
 
 <img width="1407" height="726" alt="UK retail centre boundaries" src="https://github.com/user-attachments/assets/57fa2bca-145c-400d-ab2b-0883a24c748e" />
 
-| Subfolder | Purpose | Main entry point |
-|-----------|---------|------------------|
-| [`Boundaries/`](Boundaries/) | Boundary generation from Foursquare POI + OSM landuse | [`Boundaries/src/main.py`](Boundaries/src/main.py) |
-| [`Classification/`](Classification/) | Classification, lookup tables, retail counts (config-driven) | [`Classification/0_run_all.py`](Classification/0_run_all.py) |
-| [`Naming/`](Naming/) | Place-name & classification assignment for centre polygons | [`Naming/naming.py`](Naming/naming.py) |
+| Subfolder | Purpose | 
+|-----------|---------|
+| [`Boundaries/`](Boundaries/) | Indetifies the centres & defines the centre bounds |
+| [`Classification/`](Classification/) | Classifies the centres into a hierarchy based on size and rank in LAD/BAU.|
+| [`Naming/`](Naming/) | Assigns each centre a unique name |
+
 
 ## Code Structure
 ```
-RetailCentres_Unified2/
 ├── .venv/                         # single shared venv (uv-managed)
 ├── pyproject.toml                 # union of deps from all three subprojects
 ├── .python-version                # 3.12
@@ -26,16 +29,13 @@ RetailCentres_Unified2/
 │   │   └── utils/
 │   ├── data/                      # inputs / intermediate / outputs
 │   ├── notebooks/, scripts/, tests/, docs/
-│   ├── method.md                  # methodology doc
-│   └── pyproject.toml             # subproject manifest (kept for reference)
+│   └── method.md                  # methodology doc
 │
 ├── Classification/                # classification pipeline
 │   ├── 0_run_all.py               # main entry point
 │   ├── config.yaml                # all paths and settings
 │   ├── rc_classification.py
-│   ├── rc_classification_rank.py / rc_classification_rerank.py
-│   ├── rc_id_lookup_build.py / rc_lookup.py / rc_ldcN.py
-│   └── *.ipynb                    # exploratory notebooks
+│   └── rc_id_lookup_build.py / rc_lookup.py / rc_ldcN.py
 │
 └── Naming/                        # naming pipeline
     ├── naming.py                  # stage 1: build lookup tables

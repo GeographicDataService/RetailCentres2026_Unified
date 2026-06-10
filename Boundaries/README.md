@@ -1,6 +1,8 @@
 # Retail Centre Boundaries
 
-This project provides tools and scripts for identifying, analysing, and exporting UK retail centre boundaries. The boundaries are created using open source POI (Point of Interest) data (Foursquare) and landuse data (OSM)
+This project provides tools and scripts for identifying, analysing, and exporting UK retail centre boundaries. The boundaries are created using open source POI (Point of Interest) data (Foursquare) and landuse data (OSM).
+
+
 
 <img width="1407" height="726" alt="image" src="https://github.com/user-attachments/assets/57fa2bca-145c-400d-ab2b-0883a24c748e" />
 
@@ -16,7 +18,7 @@ This project provides tools and scripts for identifying, analysing, and exportin
 RetailCentres/
 │
 ├── src/
-│   ├── main.py                         # Parameter sweep workflow (recommended)
+│   ├── main.py                         # Parameter sweep workflow
 │   ├── generate_networks.py            # Core pipeline orchestrator
 │   ├── config.py                       # Configuration parameters
 │   ├── config/
@@ -70,17 +72,21 @@ For each parameter combination, the pipeline produces:
 ## How to Run
 
 ### Installation
+
+Dependencies are managed from the **repository root** (single `pyproject.toml` +
+`uv.lock` covering Boundaries, Classification, and Naming). Install from there:
+
 ```bash
-# Using uv (recommended)
-uv pip install -e .
-
-# Or pip
-pip install -e .
+# From the repo root (recommended) — installs the locked environment into .venv
+cd ..
+uv sync
 ```
-
 
 ### Run Pipeline
 ```bash
+# Activate the root environment, then run from the Boundaries/ directory
+source ../.venv/bin/activate
+
 # Basic run (parameters configured in src/config.py)
 python src/main.py --run_name "test_run"
 

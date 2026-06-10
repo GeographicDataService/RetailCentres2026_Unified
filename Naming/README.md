@@ -8,7 +8,7 @@ Run the stages **in this order** from the project root:
 
 | Step | Command | Purpose |
 |------|---------|---------|
-| 0 (setup, once) | `python download_data.py` | Download reference boundary data into `data/` (see [Setup](#setup)) |
+| 0 (setup, once) | `python download_data.py` | Download reference boundary data into `data/` (see [Acquiring Input Data](#acquiring-input-data)) |
 | 1 | `python naming.py` | Build the naming lookup tables → `exports/RC_Naming_*.csv` |
 | 2 | `python generate_names.py` | Assemble the final names → `exports/rc2025_named.{gpkg,parquet}` |
 
@@ -33,32 +33,42 @@ Stage detail:
 
 The main input is a set of pre-delineated and pre-classified retail centre polygons with Foursquare POI data joined.
 
-### `data/` contents
+### Acquiring Input Data
+
+Everything the pipeline reads lives in `data/` and comes from one of four places.
+
+#### 1. Pipeline hand-off inputs (from the upstream stages)
+
+| File | Description | Where it comes from |
+|------|-------------|---------------------|
+| `rc2025_foursquare_LondonMannual.gpkg` | Pre-delineated, pre-classified retail centre polygons (EPSG:27700); also carries pre-joined Local Authority / County / Region columns | Output of the **Classification** stage; `run_all.sh` copies it here |
+| `foursquare_quality_retail_filtered.parquet` | Quality/retail-filtered Foursquare POI points (street/address extraction) | Output of the **Boundaries** stage |
+
+Running the whole pipeline via the repo-root `run_all.sh` places these automatically. To run Naming standalone, copy them in from the Classification/Boundaries outputs.
+
+#### 2. Auto-downloaded reference data — `python download_data.py`
 
 | File | Description | Source |
 |------|-------------|--------|
-| `rc2025_foursquare_LondonMannual.gpkg` | 9624 retail centre polygons (EPSG:27700) | Pre-processed input |
-| `foursquare_quality_retail_filtered.parquet` | Foursquare POI points for street/address extraction | Foursquare |
-| `LAD_Dec2024_UK.gpkg` | Local Authority District boundaries | ONS Open Geography |
-| `MSOA_Dec2021_EW.gpkg` | MSOA boundaries (England & Wales) | ONS Open Geography |
-| `os_open_names/Data/opname_gb.gpkg` | OS Open Names gazetteer (cities, towns, villages, etc.) | OS Data Hub (manual download) |
-| `retail_landuse.parquet` | OSM retail/commercial landuse polygons | OpenStreetMap |
-| `osm_neighbourhoods.parquet` | OSM neighbourhood/suburb place names | OpenStreetMap |
-| `osm_ni_places.parquet` | OSM place names for Northern Ireland | OpenStreetMap |
-| `scotland/SG_IntermediateZone_2011/` | Scottish Intermediate Zone boundaries | Scottish Government |
-| `northern_ireland/SDZ2021.*` | NI Super Data Zones (neighbourhood proxy) | NISRA |
+| `MSOA_Dec2021_EW.gpkg` | Neighbourhood geography for **England & Wales** (MSOA) | ONS Open Geography |
+| `scotland/SG_IntermediateZone_2011/` | Neighbourhood geography for **Scotland** (Intermediate Zones) | Scottish Government |
 
-### Setup
+#### 3. Manual downloads
 
-Most reference data can be downloaded automatically:
+| File | Description | Where to get it |
+|------|-------------|-----------------|
+| `os_open_names/Data/opname_gb.gpkg` | OS Open Names gazetteer (city/town/village/suburb…) | [OS Data Hub](https://osdatahub.os.uk/downloads/open/OpenNames) — download the **GeoPackage** (~2GB), extract to `data/os_open_names/` |
+| `northern_ireland/`*SDZ*`.shp`/`.gpkg` | Neighbourhood geography for **Northern Ireland** (Super Data Zones 2021) | [NISRA](https://www.nisra.gov.uk/support/geography/northern-ireland-super-data-zones) — extract so a `*SDZ*` file lands under `data/northern_ireland/` |
 
-```bash
-python download_data.py
-```
+`download_data.py` prints `[MISSING]` with instructions for any manual dataset it can't find.
 
-**OS Open Names** requires manual download from the [OS Data Hub](https://osdatahub.os.uk/downloads/open/OpenNames) (GeoPackage format, ~2GB). Extract to `data/os_open_names/`.
+#### 4. OSM-derived data
 
-All other input data (retail centre polygons, Foursquare POI) is bundled in `data_inputs.zip` (excludes OS Open Names due to size).
+| File | Description | How to generate |
+|------|-------------|-----------------|
+| `retail_landuse.parquet` | OSM retail landuse polygons (retail-park naming) | `python ../Boundaries/scripts/grab_osm_landuse.py --landuse both`, then copy `retail_landuse.parquet` into `data/` |
+| `osm_neighbourhoods.parquet` | OSM `place=neighbourhood/quarter` nodes (neighbourhood-name fallback) | Overpass query — no committed script; `naming.py` warns if missing |
+| `osm_ni_places.parquet` | OSM `place=city/town/village/suburb/hamlet` nodes for NI (OS Open Names doesn't cover NI) | Overpass query — no committed script |
 
 ## Usage
 
@@ -81,7 +91,7 @@ Output is written to `exports/`:
 
 ## Other Scripts
 
-`download_data.py` (pipeline step 0) downloads the ONS/Scottish/NI reference boundary data — see [Setup](#setup).
+`download_data.py` (pipeline step 0) downloads the England & Wales (MSOA) and Scottish (Intermediate Zone) neighbourhood boundaries — see [Acquiring Input Data](#acquiring-input-data).
 
 Ad-hoc analysis/comparison utilities live in `scripts/` and are not part of the main pipeline. Run them from the project root, e.g. `python scripts/compare_names.py`:
 

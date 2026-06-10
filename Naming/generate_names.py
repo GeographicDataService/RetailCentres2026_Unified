@@ -1147,10 +1147,21 @@ def generate_names():
     compact = compact.to_crs("EPSG:4326")
     compact_gpkg_path = os.path.join(EXPORTS_DIR, "retailcentre_bounds_uk.gpkg")
     compact_parquet_path = os.path.join(EXPORTS_DIR, "retailcentre_bounds_uk.parquet")
+    compact_geojson_path = os.path.join(EXPORTS_DIR, "retailcentre_bounds_uk.geojson")
+    # Shapefile is a multi-file set (.shp/.dbf/.shx/.prj/.cpg) -> keep it in its own folder.
+    compact_shp_dir = os.path.join(EXPORTS_DIR, "retailcentre_bounds_uk_shp")
+    os.makedirs(compact_shp_dir, exist_ok=True)
+    compact_shp_path = os.path.join(compact_shp_dir, "retailcentre_bounds_uk.shp")
     compact.to_file(compact_gpkg_path, driver="GPKG")
     compact.to_parquet(compact_parquet_path)
+    compact.to_file(compact_geojson_path, driver="GeoJSON")
+    # Shapefile truncates field names to 10 chars (e.g. Classification -> Classifica)
+    # and Region_NM/H3_count/Retail_N/Area_km2 are unaffected.
+    compact.to_file(compact_shp_path, driver="ESRI Shapefile")
     print(f"  Saved: {compact_gpkg_path}")
     print(f"  Saved: {compact_parquet_path}")
+    print(f"  Saved: {compact_geojson_path}")
+    print(f"  Saved: {compact_shp_path}")
 
     # Summary
     print(f"\n=== Complete ===")

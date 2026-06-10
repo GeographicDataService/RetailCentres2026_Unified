@@ -11,9 +11,16 @@ dependencies = [
     "duckdb>=1.4.4",
     "folium>=0.20.0",
     "geopandas>=1.0.1",
-    "h3>=4.2.2",
-    "igraph>=0.11.8",
-    "leidenalg>=0.10.2",
+    # Pinned exactly: h3 cell-boundary assignment changed between 4.2.2 and 4.5.0,
+    # reassigning ~3.4k POIs to different res-11 cells and shifting final centre
+    # counts (which breaks the legacy RC_ID remap).
+    "h3==4.2.2",
+    # Pinned exactly: Leiden subcentre splits are sensitive to the clustering
+    # library version. igraph 1.0.0 (major bump from 0.11.x) changes the
+    # community detection, dropping ~8 subcentre splits and shifting the final
+    # centre count (9624 -> 9616), which breaks the legacy RC_ID remap.
+    "igraph==0.11.8",
+    "leidenalg==0.10.2",
     "libpysal>=4.13.0",
     "networkx>=3.4.2",
     "nltk>=3.9.1",

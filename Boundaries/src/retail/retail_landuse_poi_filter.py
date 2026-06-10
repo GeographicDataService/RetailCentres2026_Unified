@@ -20,46 +20,96 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 def filter_retail_landuse_by_pois(
     foursquare: pl.DataFrame,
-    min_pois_per_polygon: int = 1,
+    min_pois_per_polygon: Optional[int] = 1,
     retail_landuse_path: str = "data/inputs/landuse/retail_landuse.parquet",
-    output_h3_path: Optional[str] = "data/inputs/landuse/retail_landuse_h3_geo.parquet",
-    save_intermediates: bool = True
+    output_h3_path: Optional[str] = "data/intermediate/landuse/retail_landuse_h3_geo.parquet",
+    filtered_polygons_path: Optional[str] = "data/intermediate/landuse/retail_landuse_filtered.parquet",
 ) -> pl.DataFrame:
     """
-    Filter retail landuse polygons based on POI counts.
+    Convert retail landuse polygons to H3 cells, optionally pruning by POI count.
 
-    Performs a spatial join between retail landuse polygons and Foursquare POIs,
-    counts POIs per polygon, filters polygons with sufficient POIs, and converts
-    to H3 cells.
+    When ``min_pois_per_polygon`` is None, every retail landuse polygon is kept
+    and converted to H3 (no POI-count pruning). Otherwise a spatial join against
+    the Foursquare POIs is used to drop polygons with fewer than
+    ``min_pois_per_polygon`` POIs before conversion.
+
+    Note: the POI-count path can only keep polygons that contain at least one
+    POI, so min_pois_per_polygon=0 is equivalent to 1. Pass None to keep all
+    polygons, including those with no POIs.
 
     Args:
         foursquare: Polars DataFrame of Foursquare POIs with lat/lng columns
-        min_pois_per_polygon: Minimum POIs required to keep a polygon (default: 1)
+        min_pois_per_polygon: Minimum POIs to keep a polygon, or None to keep all
         retail_landuse_path: Path to retail landuse parquet file
-        output_h3_path: Path to save filtered H3 cells (None to skip saving)
-        save_intermediates: Whether to save intermediate filtered polygons
+        output_h3_path: Path to save the H3 cells (None to skip saving)
+        filtered_polygons_path: Path to save the pruned polygons (None to skip;
+            ignored when keeping all polygons)
 
     Returns:
-        Polars DataFrame of H3 cells from filtered retail landuse polygons
+        Polars DataFrame of H3 cells from the retail landuse polygons
     """
     print("\n" + "="*80)
-    print("FILTERING RETAIL LANDUSE BY POI COUNT")
+    print("RETAIL LANDUSE -> H3 CELLS")
     print("="*80)
-    print(f"Minimum POIs per polygon: {min_pois_per_polygon}")
-    print()
 
     # Load retail landuse polygons
     print(f"Loading retail landuse from: {retail_landuse_path}")
     retail_landuse = gpd.read_parquet(retail_landuse_path)
     print(f"  Loaded {len(retail_landuse):,} polygons")
 
+    if min_pois_per_polygon is None:
+        print("Keeping all retail landuse polygons (no POI-count pruning)")
+        filtered_landuse = retail_landuse
+    else:
+        filtered_landuse = _prune_polygons_by_pois(
+            retail_landuse, foursquare, min_pois_per_polygon
+        )
+        if filtered_polygons_path:
+            out_path = Path(filtered_polygons_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            filtered_landuse.to_parquet(out_path)
+            print(f"  Saved filtered polygons: {out_path}")
+
+    # Convert to H3 cells (returns DataFrame with h3_11 and landuse columns)
+    print("\nConverting polygons to H3 cells...")
+    h3_cells_df = convert_polygons_to_h3(filtered_landuse)
+    h3_cells_pl = pl.from_pandas(h3_cells_df)
+    print(f"  Generated {len(h3_cells_pl):,} H3 cells")
+
+    # Save H3 cells if path provided
+    if output_h3_path:
+        out_path = Path(output_h3_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        h3_cells_df.to_parquet(out_path)  # regular parquet (no geometry)
+        print(f"  Saved H3 cells: {out_path}")
+
+    print("\n" + "="*80)
+    print("RETAIL LANDUSE -> H3 COMPLETE")
+    print("="*80)
+
+    return h3_cells_pl
+
+
+def _prune_polygons_by_pois(
+    retail_landuse: gpd.GeoDataFrame,
+    foursquare: pl.DataFrame,
+    min_pois_per_polygon: int,
+) -> gpd.GeoDataFrame:
+    """
+    Keep only polygons containing at least ``min_pois_per_polygon`` POIs.
+
+    Performs a spatial join between the retail landuse polygons and Foursquare
+    POIs, counts POIs per polygon, and returns the polygons meeting the
+    threshold with an added ``poi_count`` column.
+    """
+    print(f"\nPruning polygons with >= {min_pois_per_polygon} POIs...")
+
     # Convert Foursquare to GeoDataFrame
-    print("\nConverting Foursquare POIs to GeoDataFrame...")
     foursquare_pd = foursquare.to_pandas()
     foursquare_gdf = gpd.GeoDataFrame(
         foursquare_pd,
         geometry=gpd.points_from_xy(foursquare_pd['lng'], foursquare_pd['lat']),
-        crs="EPSG:4326"
+        crs="EPSG:4326",
     )
     print(f"  {len(foursquare_gdf):,} POIs")
 
@@ -67,21 +117,17 @@ def filter_retail_landuse_by_pois(
     if retail_landuse.crs != foursquare_gdf.crs:
         retail_landuse = retail_landuse.to_crs(foursquare_gdf.crs)
 
-    # Spatial join: POIs within polygons
-    print("\nPerforming spatial join...")
+    # Spatial join: POIs within polygons, then count per polygon
     joined = gpd.sjoin(
         foursquare_gdf[['geometry']],
         retail_landuse,
         how='inner',
-        predicate='within'
+        predicate='within',
     )
-
-    # Count POIs per polygon
     poi_counts = joined.groupby('index_right').size().rename('poi_count')
     print(f"  {len(poi_counts):,} polygons have POIs")
 
     # Filter polygons by POI count
-    print(f"\nFiltering polygons with >= {min_pois_per_polygon} POIs...")
     polygons_to_keep = poi_counts[poi_counts >= min_pois_per_polygon].index
     filtered_landuse = retail_landuse.loc[polygons_to_keep].copy()
     filtered_landuse['poi_count'] = poi_counts.loc[polygons_to_keep]
@@ -89,35 +135,7 @@ def filter_retail_landuse_by_pois(
     print(f"  Kept {len(filtered_landuse):,} / {len(retail_landuse):,} polygons")
     print(f"  Total POIs in kept polygons: {filtered_landuse['poi_count'].sum():,}")
 
-    # Save intermediate filtered polygons if requested
-    if save_intermediates:
-        filtered_polygons_path = Path(retail_landuse_path).parent / "retail_landuse_filtered.parquet"
-        filtered_landuse.to_parquet(filtered_polygons_path)
-        print(f"\n  Saved filtered polygons: {filtered_polygons_path}")
-
-    # Convert to H3 cells (returns DataFrame with h3_11 and landuse columns)
-    print("\nConverting filtered polygons to H3 cells...")
-    h3_cells_df = convert_polygons_to_h3(filtered_landuse)
-
-    # Convert to Polars DataFrame
-    h3_cells_pl = pl.from_pandas(h3_cells_df)
-
-    print(f"  Generated {len(h3_cells_pl):,} H3 cells")
-
-    # Save H3 cells if path provided
-    if output_h3_path:
-        output_path = Path(output_h3_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Save as regular parquet (no geometry)
-        h3_cells_df.to_parquet(output_path)
-        print(f"\n  Saved H3 cells: {output_path}")
-
-    print("\n" + "="*80)
-    print("RETAIL LANDUSE FILTERING COMPLETE")
-    print("="*80)
-
-    return h3_cells_pl
+    return filtered_landuse
 
 
 def convert_polygons_to_h3(polygons: gpd.GeoDataFrame) -> pd.DataFrame:

@@ -26,7 +26,7 @@ FOURSQUARE_PATH = INPUTS_DIR / "poi" / "uk_foursquare_cc_nov_iceberg.parquet"
 
 COMMERCIAL_LANDUSE_PATH = LANDUSE_DIR / "commercial_landuse.parquet"
 INDUSTRIAL_LANDUSE_PATH = LANDUSE_DIR / "industrial_landuse.parquet"
-RETAIL_LANDUSE_H3_GEO_PATH = LANDUSE_DIR / "retail_landuse_h3_geo.parquet"
+# Source retail land-use polygons (an input).
 RETAIL_LANDUSE_POLYGONS_PATH = LANDUSE_DIR / "retail_landuse.parquet"
 
 # Lookup tables (brand lists, defunct retailers)
@@ -43,6 +43,10 @@ ONSPD_DIR = INPUTS_DIR / "onspd"
 
 # Filter ID paths
 FILTER_IDS_PATH = INTERMEDIATE_DIR / "poi_filtered" / "quality_filter_ids.parquet"
+
+# Retail land-use artifacts generated from the source polygons each run.
+RETAIL_LANDUSE_FILTERED_PATH = INTERMEDIATE_DIR / "landuse" / "retail_landuse_filtered.parquet"
+RETAIL_LANDUSE_H3_GEO_PATH = INTERMEDIATE_DIR / "landuse" / "retail_landuse_h3_geo.parquet"
 
 
 # ========================================

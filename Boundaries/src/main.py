@@ -1,6 +1,5 @@
 import argparse
 import polars as pl
-import pandas as pd
 import numpy as np
 import itertools
 import random
@@ -112,17 +111,18 @@ print(f"  ✓ Saved {len(foursquare_gdf):,} filtered POIs with Point geometries\
 foursquare = ut.add_h3_11_column(foursquare)
 foursquare_cells = ut.agg_to_cells_foursquare(foursquare)
 
-# Load and filter land use data
-if config.FILTER_RETAIL_LANDUSE:
-    land_use_cells = retail_landuse_poi_filter.filter_retail_landuse_by_pois(
-        foursquare=foursquare,
-        min_pois_per_polygon=config.MIN_POIS_PER_LANDUSE_POLYGON,
-        save_intermediates=True
-    )
-else:
-    print("\nSkipping retail land use POI filtering (disabled)")
-    land_use_cells = pd.read_parquet(config.RETAIL_LANDUSE_H3_GEO_PATH)
-    land_use_cells = pl.DataFrame(land_use_cells)
+# Convert retail land use polygons to H3 cells (regenerated each run).
+# When FILTER_RETAIL_LANDUSE is True the polygons are pruned by POI count;
+# otherwise all retail land use polygons are kept.
+land_use_cells = retail_landuse_poi_filter.filter_retail_landuse_by_pois(
+    foursquare=foursquare,
+    min_pois_per_polygon=(
+        config.MIN_POIS_PER_LANDUSE_POLYGON if config.FILTER_RETAIL_LANDUSE else None
+    ),
+    retail_landuse_path=str(config.RETAIL_LANDUSE_POLYGONS_PATH),
+    output_h3_path=str(config.RETAIL_LANDUSE_H3_GEO_PATH),
+    filtered_polygons_path=str(config.RETAIL_LANDUSE_FILTERED_PATH),
+)
 
 combined = ut.create_combined_table(foursquare_cells, land_use_cells)
 
