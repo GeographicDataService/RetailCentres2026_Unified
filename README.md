@@ -100,8 +100,6 @@ cd Foursquare_POI_retrieval
 cp .env.example .env          # set FOURSQUARE_ICEBERG_TOKEN — JWT from the "Access via code"
                               # section of https://places.foursquare.com/dataset/OS%20Places/code
 ./run_foursquare.sh           # query → clean (November Foursquare release)
-cp data/processed/uk_foursquare_cc_nov_iceberg.parquet \
-   ../Boundaries/data/inputs/poi/uk_foursquare_cc_nov_iceberg.parquet
 ```
 Generates the UK Foursquare POI parquet that Boundaries reads at
 `Boundaries/data/inputs/poi/uk_foursquare_cc_nov_iceberg.parquet`. Only the Foursquare token
@@ -123,8 +121,6 @@ cd Boundaries
 python scripts/boundary_postprocessing.py --run-dir data/outputs/runs/test_run
 # add --legacy-ids to remap workshop split-centre RC_IDs onto the IDs which match the published version (The numbering was orignally non-determistic when centres had tied POI totals)
 ```
-Auto-detects the split (`splitthresh_1500`) and nosplit (`splitthresh_9999*`) final centres, filtered POIs, and any retail-parks layer in the run directory; writes a timestamped folder under `data/outputs/boundary_postprocessing/`.
-
 **Classification** (`Classification/`):
 ```bash
 cd Classification
