@@ -24,7 +24,7 @@ Running the pipeline does 4 things:
 With the current [config.yaml](config.yaml), the main input source files are:
 
 - retail-centre polygons: `geo/postworkshopcentres_wgs84.gpkg` — upstream pipeline output (Boundaries/workshop delineation)
-- old retail-centre polygons for ID matching: `geo/old_retail_mapmaker/Retail_Boundaries_UK.gpkg` — legacy Retail Centre Boundaries project output
+- old retail-centre polygons for ID matching: `geo/old_retail_mapmaker/Retail_Boundaries_UK.gpkg` — legacy Retail Centre Boundaries project output ([GeoDS: Retail Centre Boundaries and Open Indicators, 2022](https://data.geods.ac.uk/dataset/retail-centre-boundaries-and-open-indicators))
 - LAD boundaries: `geo/LA/Local_Authority_Districts_May_2024_Boundaries_UK_BFE_-5758551109064458912/LAD_MAY_2024_UK_BFE.shp` — [ONS Open Geography Portal](https://geoportal.statistics.gov.uk) (LAD May 2024 Boundaries UK BFE)
 - county boundaries: `geo/Counties/uk_27700.shp` — [OS Boundary-Line](https://osdatahub.os.uk/downloads/open/BoundaryLine) `boundary_line_ceremonial_counties` layer (91 GB ceremonial counties) plus 6 Northern Ireland counties
 - region boundaries: `geo/Regions/GB_regions.shp` — [OS Boundary-Line](https://osdatahub.os.uk/downloads/open/BoundaryLine) (`country_region` layer)

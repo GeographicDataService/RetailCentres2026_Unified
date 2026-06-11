@@ -107,11 +107,13 @@ is needed.
 
 **Boundary generation** (`Boundaries/`):
 ```bash
+cd Boundaries
+
 # Basic run — parameters in Boundaries/src/config.py
-python Boundaries/src/main.py --run_name "test_run"
+python src/main.py --run_name "test_run"
 
 # With pre-saved quality filters (faster)
-python Boundaries/src/main.py --run_name "test_run" --use_presaved_filters
+python src/main.py --run_name "test_run" --use_presaved_filters
 ```
 See [`Boundaries/method.md`](Boundaries/method.md) for methodology and [`Boundaries/README.md`](Boundaries/README.md) for input-data acquisition (Foursquare POI, OSM landuse, ONSPD, LAD boundaries).
 
@@ -119,7 +121,8 @@ See [`Boundaries/method.md`](Boundaries/method.md) for methodology and [`Boundar
 ```bash
 cd Boundaries
 python scripts/boundary_postprocessing.py --run-dir data/outputs/runs/test_run
-# add --legacy-ids to remap workshop split-centre RC_IDs onto the IDs which match the published version (The numbering was orignally non-determistic when centres had tied POI totals)
+# add --legacy-ids to remap workshop split-centre RC_IDs onto the IDs which match the published version
+# (the numbering was originally non-deterministic when centres had tied POI totals)
 ```
 **Classification** (`Classification/`):
 ```bash

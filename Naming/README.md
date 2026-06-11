@@ -4,7 +4,7 @@ Python pipeline for assigning place names and classifications to UK retail centr
 
 ## Pipeline
 
-Run the stages **in this order** from the project root:
+Run the stages **in this order** from `Naming/`:
 
 | Step | Command | Purpose |
 |------|---------|---------|

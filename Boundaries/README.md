@@ -42,8 +42,9 @@ RetailCentres/
 │   ├── inputs/
 │   │   ├── poi/                        # Foursquare POI data
 │   │   ├── boundaries/                 # Local Authority boundaries
-│   │   ├── landuse/                    # OSM land use data (H3 cells)
-│   │   └── onspd/                      # UK postcode data
+│   │   ├── landuse/                    # OSM retail/commercial/industrial land use
+│   │   ├── onspd/                      # UK postcode data
+│   │   └── legacy_rc_bounds.parquet    # Frozen reference run (legacy RC_ID remap)
 │   ├── intermediate/                   # Reusable filter and land-use artifacts
 │   └── outputs/
 │       └── runs/                       # Per-run parameter outputs
@@ -57,7 +58,9 @@ RetailCentres/
 
 ### Inputs (in `data/inputs/`)
 - **poi/** - Foursquare POI parquet files with lat/lng and categories
-- **landuse/** - OSM retail/commercial land use (H3 cells, generated via separate script)
+- **landuse/** - OSM retail/commercial/industrial land use (H3 cells, generated via separate script)
+- **onspd/** - UK postcode directory CSVs (postcode mismatch filtering)
+- **legacy_rc_bounds.parquet** - Frozen reference run, used only by `scripts/boundary_postprocessing.py --legacy-ids` to remap new split-centre RC_IDs onto a stable set of IDs
 
 ### Outputs (in `data/intermediate/` and `data/outputs/`)
 For each run, the pipeline writes shared filtered POI files under
