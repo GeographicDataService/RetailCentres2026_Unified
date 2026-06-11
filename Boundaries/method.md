@@ -455,7 +455,7 @@ merge_adjacent: [True]                  # Enable/disable merging
 
 **Intermediate Outputs (per parameter combination):**
 - `0_input_cells.parquet`: Filtered H3 cells
-- `1_intial_networks.parquet`: Connected components
+- `1_initial_networks.parquet`: Connected components
 - `2_filtered_networks.parquet`: After network thresholding
 - `3_afterfill.parquet`: After gap filling
 - `4_finalcentres.parquet`: Dissolved polygons

@@ -69,7 +69,7 @@ data/outputs/runs/<run_name>/
 ├── retail_parks/
 └── foursquare_mrc_2_mrn_10_mtf_6_splitthresh_<threshold>_merge_y/
 ├── 0_input_cells.parquet              # Filtered H3 cells meeting criteria
-├── 1_intial_networks.parquet          # Connected components (filename keeps historical typo)
+├── 1_initial_networks.parquet         # Connected components
 ├── 2_filtered_networks.parquet        # After network thresholding / one-cell merging
 ├── 3_afterfill.parquet                # After gap filling
 └── 4_finalcentres_las.parquet         # Final boundaries + Local Authority IDs

@@ -87,7 +87,7 @@ def generate_networks(
     # ----------------------------------------
     # A network is defined as a set of cells connected by at least one shared edge
     cells_with_network = ut.create_networks(input_cells)
-    ut.to_parquet(cells_with_network, f"{save_folder}/1_intial_networks.parquet")
+    ut.to_parquet(cells_with_network, f"{save_folder}/1_initial_networks.parquet")
 
     # ------------------------------------------------------------------
     # Filter networks by retail venue count
@@ -98,7 +98,7 @@ def generate_networks(
 
     n_networks = filt_cells_with_network.select(pl.col('network_number').n_unique()).to_numpy()[0][0]
     print(
-        "Number of networks after intial filter: "
+        "Number of networks after initial filter: "
         f"{n_networks}"
     )
 
