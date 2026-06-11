@@ -138,27 +138,31 @@ Reference data fetch:
 ```bash
 python Naming/download_data.py
 ```
-**OS Open Names** (~2 GB) needs a manual download from [OS Data Hub](https://osdatahub.os.uk/downloads/open/OpenNames); extract to `Naming/data/os_open_names/`. Outputs land in `Naming/exports/`.
 
-### Package Input Data
+### Input Data Zips
 
-The Boundaries, Classification, and Naming stages each have a `make_inputs_zip.sh`
-script that bundles the data files needed to run that stage standalone. From the
-repo root:
+The Boundaries, Classification, and Naming stages rely on a large number of
+auxiliary geographic datasets. The locations and access dates for these files
+are documented in each project's README.
 
-```bash
-./make_all_input_zips.sh
-```
+For convenience, GeoDS members can download the input zip files from SharePoint:
 
-This writes one zip for each data-dependent stage:
+- **Path:** `GeoDS > Shared Documents > 1 Data Products > Product Development > RetailCentreBounds2026 > inputs`
+- **Link:** [RetailCentreBounds2026 inputs](https://liveuclac.sharepoint.com/:f:/r/sites/GeoDS/Shared%20Documents/1%20Data%20Products/Product%20Development/RetailCentreBounds2026/inputs?csf=1&web=1&e=pkjJ4q)
 
-- `Boundaries/boundaries_inputs.zip`
-- `Classification/classification_inputs.zip`
-- `Naming/naming_inputs.zip`
+The data needed to run the three data-dependent stages is stored as stage-level
+zip files:
 
-Unzip each bundle from inside its stage directory to restore the expected paths.
-The Foursquare retrieval stage has no data input bundle; create
-`Foursquare_POI_retrieval/.env` locally with `FOURSQUARE_ICEBERG_TOKEN`.
+- `boundaries_inputs.zip`
+- `classification_inputs.zip`
+- `naming_inputs.zip`
+
+Place each zip in its matching stage folder and unzip it there:
+
+- put `boundaries_inputs.zip` in `Boundaries/`
+- put `classification_inputs.zip` in `Classification/`
+- put `naming_inputs.zip` in `Naming/`
+
 
 ### Testing
 ```bash
