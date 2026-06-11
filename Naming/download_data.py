@@ -11,6 +11,8 @@ from OS Data Hub with an API key. The script will flag these.
 import os
 import zipfile
 import requests
+import geopandas as gpd
+from shapely.geometry import Point
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
@@ -64,6 +66,49 @@ MANUAL_DATASETS = {
         "check_path": os.path.join(DATA_DIR, "northern_ireland"),
     },
 }
+
+
+# ─── OSM place nodes via Overpass ───────────────────────────────────────
+# Two inputs naming.py expects but that have no clean direct-download URL.
+# Both share the schema [name, place_type, geometry(Point)] in EPSG:27700.
+OVERPASS = "https://overpass-api.de/api/interpreter"
+OVERPASS_HEADERS = {"User-Agent": "RetailCentres-naming/1.0 (OSM place grab)"}
+
+OSM_PLACES = {
+    "osm_neighbourhoods.parquet": {
+        "description": "OSM place=neighbourhood/quarter nodes (UK-wide)",
+        "query": (
+            '[out:json][timeout:600];'
+            'area["ISO3166-1"="GB"][admin_level=2]->.uk;'
+            'node["place"~"^(neighbourhood|quarter)$"]["name"](area.uk);'
+            'out body;'
+        ),
+    },
+    "osm_ni_places.parquet": {
+        "description": "OSM place=city/town/village/suburb/hamlet nodes (NI bbox)",
+        # NI bounding box; slight ROI overshoot is filtered downstream in naming.py.
+        "query": (
+            '[out:json][timeout:600];'
+            'node["place"~"^(city|town|village|suburb|hamlet)$"]["name"]'
+            '(54.00,-8.20,55.35,-5.35);'
+            'out body;'
+        ),
+    },
+}
+
+
+def grab_osm_places(query):
+    """Run an Overpass query, returning a name/place_type/geometry GDF (EPSG:27700)."""
+    data = requests.post(OVERPASS, data={"data": query},
+                         headers=OVERPASS_HEADERS, timeout=600).json()
+    rows = [
+        {"name": el["tags"]["name"],
+         "place_type": el["tags"]["place"],
+         "geometry": Point(el["lon"], el["lat"])}
+        for el in data["elements"]
+        if el["type"] == "node" and "name" in el.get("tags", {})
+    ]
+    return gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326").to_crs("EPSG:27700")
 
 
 def download_file(url, dest_path, description=""):
@@ -135,6 +180,20 @@ def main():
                 extract_zip(dest, extract_dir)
             except zipfile.BadZipFile:
                 print(f"  ERROR: Bad zip file: {dest}")
+
+    # OSM place nodes (Overpass)
+    for filename, ds in OSM_PLACES.items():
+        print(f"\n--- {ds['description']} ---")
+        dest = os.path.join(DATA_DIR, filename)
+        if os.path.exists(dest):
+            print(f"  Already exists: {dest}")
+            continue
+        try:
+            gdf = grab_osm_places(ds["query"])
+            gdf.to_parquet(dest)
+            print(f"  Saved: {dest} ({len(gdf)} nodes)")
+        except Exception as e:  # Overpass can rate-limit or time out
+            print(f"  ERROR: Overpass grab failed: {e}")
 
     # Check manual datasets
     print("\n" + "=" * 70)

@@ -67,8 +67,10 @@ Running the whole pipeline via the repo-root `run_all.sh` places these automatic
 | File | Description | How to generate |
 |------|-------------|-----------------|
 | `retail_landuse.parquet` | OSM retail landuse polygons (retail-park naming) | `python ../Boundaries/scripts/grab_osm_landuse.py --landuse both`, then copy `retail_landuse.parquet` into `data/` |
-| `osm_neighbourhoods.parquet` | OSM `place=neighbourhood/quarter` nodes (neighbourhood-name fallback) | Overpass query — no committed script; `naming.py` warns if missing |
-| `osm_ni_places.parquet` | OSM `place=city/town/village/suburb/hamlet` nodes for NI (OS Open Names doesn't cover NI) | Overpass query — no committed script |
+| `osm_neighbourhoods.parquet` | OSM `place=neighbourhood/quarter` nodes (neighbourhood-name fallback) | Auto-grabbed from Overpass by `python download_data.py`; `naming.py` warns if missing |
+| `osm_ni_places.parquet` | OSM `place=city/town/village/suburb/hamlet` nodes for NI (OS Open Names doesn't cover NI) | Auto-grabbed from Overpass by `python download_data.py` |
+
+`download_data.py` skips any file already present in `data/`, so it never overwrites an existing grab. OSM is live, so a fresh grab won't byte-match an older file; delete the parquet first if you want to refresh it.
 
 ## Usage
 
@@ -91,7 +93,7 @@ Output is written to `exports/`:
 
 ## Other Scripts
 
-`download_data.py` (pipeline step 0) downloads the England & Wales (MSOA) and Scottish (Intermediate Zone) neighbourhood boundaries — see [Acquiring Input Data](#acquiring-input-data).
+`download_data.py` (pipeline step 0) downloads the England & Wales (MSOA) and Scottish (Intermediate Zone) neighbourhood boundaries, and grabs the OSM `osm_neighbourhoods.parquet` and `osm_ni_places.parquet` place nodes from Overpass — see [Acquiring Input Data](#acquiring-input-data).
 
 Ad-hoc analysis/comparison utilities live in `scripts/` and are not part of the main pipeline. Run them from the project root, e.g. `python scripts/compare_names.py`:
 
