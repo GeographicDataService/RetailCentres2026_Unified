@@ -1,0 +1,19 @@
+[project]
+name = "foursquare-poi-retrieval"
+version = "0.1.0"
+description = "Foursquare OS Places retrieval and cleaning for the RetailCentres unified pipeline"
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = [
+    "duckdb>=1.4.4",
+    "geopandas>=1.0.1",
+    "pandas>=2.2.3",
+    "pyarrow>=19.0.1",
+    "python-dotenv>=1.0.0",
+    "shapely>=2.0",
+    "tqdm>=4.67.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

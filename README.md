@@ -1,25 +1,34 @@
 # Retail Centres — Unified Workspace (2026)
 
-A single repository for the three subprojects of the 2026 GeoDS UK Retail Centres.
+A single repository for the four subprojects of the 2026 GeoDS UK Retail Centres.
 **Authors:** Owen Goodwin (owen.goodwin@liverpool.ac.uk), Carol Yin (carolyin@liverpool.ac.uk)
 
 **Method adapted from:** [Open Retail Centres: A National Open Data Set of Retail Centre Boundaries and Indicators](https://www.nature.com/articles/s41597-022-01556-3) — *Nature Scientific Data* (2022)
 
 <img width="1407" height="726" alt="UK retail centre boundaries" src="https://github.com/user-attachments/assets/57fa2bca-145c-400d-ab2b-0883a24c748e" />
 
-| Subfolder | Purpose | 
-|-----------|---------|
-| [`Boundaries/`](Boundaries/) | Indetifies the centres & defines the centre bounds |
-| [`Classification/`](Classification/) | Classifies the centres into a hierarchy based on size and rank in LAD/BAU.|
-| [`Naming/`](Naming/) | Assigns each centre a unique name |
+The repository is made out of 4 separate subprojects which should be run in turn to produce the final data product:
+
+| # | Subfolder | Purpose |
+|---|-----------|---------|
+| 1 | [`Foursquare_POI_retrieval/`](Foursquare_POI_retrieval/) | Retrieves & cleans the UK Foursquare POI file that feeds Boundaries |
+| 2 | [`Boundaries/`](Boundaries/) | Identifies the centres & defines the centre bounds |
+| 3 | [`Classification/`](Classification/) | Classifies the centres into a hierarchy based on size and rank in LAD/BUA |
+| 4 | [`Naming/`](Naming/) | Assigns each centre a unique name |
 
 
 ## Code Structure
 ```
 ├── .venv/                         # single shared venv (uv-managed)
-├── pyproject.toml                 # union of deps from all three subprojects
+├── pyproject.toml                 # union of deps from all four subprojects
 ├── .python-version                # 3.12
 ├── README.md                      # this file
+│
+├── Foursquare_POI_retrieval/      # upstream POI retrieval (feeds Boundaries)
+│   ├── run_foursquare.sh          # 2-stage wrapper (query → clean)
+│   ├── src/                       # query_foursquare_bycc_iceberg / clean_foursquare
+│   ├── pipelines/                 # params.yaml (filename / country code)
+│   └── data/                      # POI inputs/outputs (gitignored)
 │
 ├── Boundaries/                    # boundary generation toolkit
 │   ├── src/
@@ -35,13 +44,13 @@ A single repository for the three subprojects of the 2026 GeoDS UK Retail Centre
 │   ├── 0_run_all.py               # main entry point
 │   ├── config.yaml                # all paths and settings
 │   ├── rc_classification.py
-│   └── rc_id_lookup_build.py / rc_lookup.py / rc_ldcN.py
+│   └── rc_id_lookup_build.py / rc_lookup.py / rc_foursquare_anchors.py
 │
 └── Naming/                        # naming pipeline
     ├── naming.py                  # stage 1: build lookup tables
     ├── generate_names.py          # stage 2: assemble final names
     ├── download_data.py           # ONS / Scottish / NI reference data
-    ├── compare_names.py / naming_comparison.py
+    ├── scripts/                   # compare_names.py / naming_comparison.py / ad-hoc analysis
     ├── data/                      # reference boundaries, POI, gazetteers
     └── exports/                   # final named centres (.gpkg, .parquet, .csv)
 ```
@@ -50,7 +59,7 @@ A single repository for the three subprojects of the 2026 GeoDS UK Retail Centre
 
 ### Installation
 
-A single shared venv at the workspace root services all three subprojects.
+A single shared venv at the workspace root services all four subprojects.
 
 ```bash
 # From RetailCentres_Unified/
@@ -59,7 +68,7 @@ source .venv/bin/activate
 uv pip install -e .
 ```
 
-The `pyproject.toml` is the union of dependencies from all three subprojects. After install, every script in every subfolder runs against this same `.venv`.
+The `pyproject.toml` is the union of dependencies from all four subprojects. After install, every script in every subfolder runs against this same `.venv`.
 
 Fallback (no `uv`):
 ```bash
@@ -70,16 +79,33 @@ pip install -e .
 
 ### Run everything (single command)
 
-[`run_all.sh`](run_all.sh) runs all stages in order and copies each stage's output into the next stage's input:
+[`run_all.sh`](run_all.sh) runs all stages in order (Foursquare POI retrieval → Boundaries →
+Classification → Naming) and copies each stage's output into the next stage's input:
 
 ```bash
 source .venv/bin/activate
 ./run_all.sh my_run
 ```
 
+The first stage needs `FOURSQUARE_ICEBERG_TOKEN` in `Foursquare_POI_retrieval/.env`
+(see [`Foursquare_POI_retrieval/README.md`](Foursquare_POI_retrieval/README.md)).
+
 Or run the stages individually:
 
 ### Run Pipelines (individually)
+
+**Foursquare POI retrieval** (`Foursquare_POI_retrieval/`) — *upstream of Boundaries*:
+```bash
+cd Foursquare_POI_retrieval
+cp .env.example .env          # set FOURSQUARE_ICEBERG_TOKEN — JWT from the "Access via code"
+                              # section of https://places.foursquare.com/dataset/OS%20Places/code
+./run_foursquare.sh           # query → clean (November Foursquare release)
+cp data/processed/uk_foursquare_cc_nov_iceberg.parquet \
+   ../Boundaries/data/inputs/poi/uk_foursquare_cc_nov_iceberg.parquet
+```
+Generates the UK Foursquare POI parquet that Boundaries reads at
+`Boundaries/data/inputs/poi/uk_foursquare_cc_nov_iceberg.parquet`. Only the Foursquare token
+is needed.
 
 **Boundary generation** (`Boundaries/`):
 ```bash
@@ -126,6 +152,4 @@ pytest Boundaries/tests
 ## Acquiring Input Data
 
 Each subproject has its own input-data needs documented in its own README. 
-
-
 

@@ -1,0 +1,13 @@
+# Large, re-downloadable POI + census inputs and pipeline outputs (see REPRODUCE.md)
+data/
+
+# Secrets and local env
+.env
+.venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# DuckDB rtree temp files left by the query stage
+*.gpkg.tmp_rtree_*.db

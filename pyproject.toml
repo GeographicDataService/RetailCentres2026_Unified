@@ -1,11 +1,11 @@
 [project]
 name = "retailcentres-unified"
 version = "0.1.0"
-description = "Unified repo bundling the Boundaries, Classification, and Naming retail-centre projects"
+description = "Unified repo bundling the Foursquare, Boundaries, Classification, and Naming retail-centre projects"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    # --- from Boundaries/pyproject.toml (verbatim) ---
+    # --- Boundaries pipeline dependencies ---
     "community>=1.0.0b1",
     "contextily>=1.6.2",
     "duckdb>=1.4.4",
@@ -46,6 +46,10 @@ dependencies = [
     "pyogrio>=0.10",
     "requests>=2.32",
     "scipy>=1.13",
+    # --- additions for Foursquare_POI_retrieval (POI retrieval pipeline) ---
+    # duckdb/geopandas/pyarrow/pandas above already cover the query+clean steps;
+    # the httpfs/iceberg DuckDB extensions are auto-installed at runtime.
+    "python-dotenv>=1.0.0",  # loads FOURSQUARE_ICEBERG_TOKEN from .env for the query + category lookup
 ]
 
 [build-system]

@@ -1,0 +1,19 @@
+# Compatibility requirements for running this subproject outside the unified repo.
+#
+# The normal workflow uses the root environment:
+#   cd ..
+#   uv venv --python 3.12
+#   source .venv/bin/activate
+#   uv pip install -e .
+#
+# Keep this file intentionally small. The previous version was an old PDM export
+# from the upstream Overture project and included DVC/Jupyter dependencies that
+# are not used by the current Foursquare ICEBERG query + clean pipeline.
+
+duckdb>=1.4.4
+geopandas>=1.0.1
+pandas>=2.2.3
+pyarrow>=19.0.1
+python-dotenv>=1.0.0
+shapely>=2.0
+tqdm>=4.67.1

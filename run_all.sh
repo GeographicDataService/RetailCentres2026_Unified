@@ -3,7 +3,13 @@
 set -e
 RUN="$1"
 
-cd Boundaries
+# Stage 0: retrieve the UK Foursquare POI input (needs FOURSQUARE_ICEBERG_TOKEN in
+# Foursquare_POI_retrieval/.env). Output is copied into Boundaries' inputs.
+cd Foursquare_POI_retrieval
+./run_foursquare.sh
+cp data/processed/uk_foursquare_cc_nov_iceberg.parquet ../Boundaries/data/inputs/poi/uk_foursquare_cc_nov_iceberg.parquet
+
+cd ../Boundaries
 python src/main.py --run_name "$RUN"
 python scripts/boundary_postprocessing.py --run-dir data/outputs/runs/$RUN --output-dir data/outputs/boundary_postprocessing/$RUN --legacy-ids
 cp data/outputs/boundary_postprocessing/$RUN/postworkshopcentres.gpkg ../Classification/geo/postworkshopcentres_wgs84.gpkg

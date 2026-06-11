@@ -44,12 +44,13 @@ RetailCentres/
 │   │   ├── boundaries/                 # Local Authority boundaries
 │   │   ├── landuse/                    # OSM land use data (H3 cells)
 │   │   └── onspd/                      # UK postcode data
-│   ├── intermediate/                   # Pipeline stage outputs (0-3)
-│   └── outputs/                        # Final centre boundaries (4)
+│   ├── intermediate/                   # Reusable filter and land-use artifacts
+│   └── outputs/
+│       └── runs/                       # Per-run parameter outputs
 ├── notebooks/                          # Jupyter notebooks for analysis
 ├── tests/                              # Unit tests
 ├── method.md                           # Methodology documentation
-└── pyproject.toml                      # Project dependencies
+└── README.md / method.md               # Documentation
 ```
 
 ## Data Structure
@@ -59,12 +60,17 @@ RetailCentres/
 - **landuse/** - OSM retail/commercial land use (H3 cells, generated via separate script)
 
 ### Outputs (in `data/intermediate/` and `data/outputs/`)
-For each parameter combination, the pipeline produces:
+For each run, the pipeline writes shared filtered POI files under
+`data/outputs/runs/<run_name>/`, then one folder per parameter combination:
 ```
-{run_name}_{parameters}/
+data/outputs/runs/<run_name>/
+├── foursquare_quality_filtered.parquet
+├── foursquare_filtered.parquet
+├── retail_parks/
+└── foursquare_mrc_2_mrn_10_mtf_6_splitthresh_<threshold>_merge_y/
 ├── 0_input_cells.parquet              # Filtered H3 cells meeting criteria
 ├── 1_initial_networks.parquet         # Connected components
-├── 2_merged_filtered_networks.parquet # After merging and thresholding
+├── 2_filtered_networks.parquet        # After network thresholding / one-cell merging
 ├── 3_afterfill.parquet                # After gap filling
 └── 4_finalcentres_las.parquet         # Final boundaries + Local Authority IDs
 ```
@@ -77,9 +83,10 @@ Dependencies are managed from the **repository root** (single `pyproject.toml` +
 `uv.lock` covering Boundaries, Classification, and Naming). Install from there:
 
 ```bash
-# From the repo root (recommended) — installs the locked environment into .venv
-cd ..
-uv sync
+# From the repo root (recommended)
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -e .
 ```
 
 ### Run Pipeline
@@ -138,7 +145,7 @@ If you don't have GeoDS access, you can acquire the following datasets individua
 ### OSM Land Use Data
 **OpenStreetMap Land Use** - Download from OSMNX using the provided script:
 ```bash
-python src/grab_osm_landuse.py --landuse both
+python scripts/grab_osm_landuse.py --landuse both
 ```
 This creates H3 cell versions of retail and commercial land use areas.
 - Output location: `data/inputs/landuse/`
@@ -160,4 +167,3 @@ This creates H3 cell versions of retail and commercial land use areas.
 - Source: [ONS Open Geography Portal - Local Authority Districts (December 2022) Boundaries UK BGC](https://geoportal.statistics.gov.uk/datasets/local-authority-districts-december-2022-boundaries-uk-bgc/explore)
 - GeoPackage format, used for assigning centres to Local Authorities
 - Place in: `data/inputs/boundaries/`
-

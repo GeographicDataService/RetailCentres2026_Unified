@@ -1,6 +1,6 @@
 # Retail Centre Boundary Creation
 Owen Goodwin - Geographic Data Service
-Date: December 2025
+Current as of: June 2026
 ---
 
 ## Overview
@@ -455,7 +455,7 @@ merge_adjacent: [True]                  # Enable/disable merging
 
 **Intermediate Outputs (per parameter combination):**
 - `0_input_cells.parquet`: Filtered H3 cells
-- `1_intial_networks.parquet`: Connected components
+- `1_initial_networks.parquet`: Connected components
 - `2_filtered_networks.parquet`: After network thresholding
 - `3_afterfill.parquet`: After gap filling
 - `4_finalcentres.parquet`: Dissolved polygons
@@ -509,4 +509,3 @@ merge_adjacent: [True]                  # Enable/disable merging
 **Additional Fields:**
 - `big_box_proportion` (float): Fraction of POIs matching big-box brands
 - `osm_retail_overlap` (float): Overlap fraction with OSM retail land use
-
