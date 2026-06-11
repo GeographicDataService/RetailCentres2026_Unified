@@ -1,6 +1,7 @@
 output/*
 !output/.gitkeep
-geo/
+geo/*
+!geo/.gitkeep
 docs/
 figure/
 old/

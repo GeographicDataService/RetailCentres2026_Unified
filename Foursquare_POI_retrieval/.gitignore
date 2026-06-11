@@ -1,5 +1,6 @@
-# Large, re-downloadable POI + census inputs and pipeline outputs (see REPRODUCE.md)
-data/
+# Large, re-downloadable POI inputs and pipeline outputs (see REPRODUCE.md)
+data/*
+!data/.gitkeep
 
 # Secrets and local env
 .env

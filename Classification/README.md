@@ -28,12 +28,16 @@ With the current [config.yaml](config.yaml), the main input source files are:
 - LAD boundaries: `geo/LA/Local_Authority_Districts_May_2024_Boundaries_UK_BFE_-5758551109064458912/LAD_MAY_2024_UK_BFE.shp` — [ONS Open Geography Portal](https://geoportal.statistics.gov.uk) (LAD May 2024 Boundaries UK BFE)
 - county boundaries: `geo/Counties/uk_27700.shp` — [OS Boundary-Line](https://osdatahub.os.uk/downloads/open/BoundaryLine) `boundary_line_ceremonial_counties` layer (91 GB ceremonial counties) plus 6 Northern Ireland counties
 - region boundaries: `geo/Regions/GB_regions.shp` — [OS Boundary-Line](https://osdatahub.os.uk/downloads/open/BoundaryLine) (`country_region` layer)
-- built-up area boundaries: `geo/buildup/merged_BUA_dissolved2025.gpkg` — derived; see [`geo/BuiltupAreaDisolve/`](geo/BuiltupAreaDisolve/README.md) (OS Open Built-Up Areas + ONS 2011)
+- built-up area boundaries: `geo/buildup/merged_BUA_dissolved2025.gpkg` — derived; see [`scripts/bua_dissolve/`](scripts/bua_dissolve/README.md) (OS Open Built-Up Areas + ONS 2011)
 - LDC input points: `data/LDC_Historical_snapshot_2015-01-01-2025-09-30.csv`
 - London town centre boundaries: `geo/london_town_centre/London_Town_Centres_Boundaries.gpkg` — [London Datastore — Town Centre Boundaries](https://data.london.gov.uk/dataset/town_centre_boundaries) (GLA)
 - Foursquare retail POIs: `geo/foursquare_quality_retail_filtered.parquet` — upstream pipeline output (Boundaries stage)
 
-These inputs are bundled in `classification_inputs.zip`. From `Classification/`, run `unzip classification_inputs.zip` to restore the `geo/...` tree. The zip is gitignored (a local artifact); rebuild it with `bash make_inputs_zip.sh`.
+These inputs are bundled in `classification_inputs.zip`. From `Classification/`, run `unzip classification_inputs.zip` to restore the `geo/...` tree. The zip is gitignored (a local artifact); rebuild it with:
+
+```bash
+./make_inputs_zip.sh
+```
 
 ## Requirements
 

@@ -106,6 +106,17 @@ python src/main.py --run_name "test_run" --use_presaved_filters
 - Parameter sweep values (min POI thresholds, fill settings, etc.)
 - Feature flags (retail parks, land use filters)
 
+### Package Inputs
+
+To bundle all data needed to run the Boundaries stage standalone:
+
+```bash
+./make_inputs_zip.sh
+```
+
+This writes `boundaries_inputs.zip` with entries under `data/inputs/...`.
+Unzip it from `Boundaries/` to restore the paths expected by `src/config.py`.
+
 ### Testing
 ```bash
 pytest

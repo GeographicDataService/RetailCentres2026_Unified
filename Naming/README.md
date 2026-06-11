@@ -72,6 +72,17 @@ Running the whole pipeline via the repo-root `run_all.sh` places these automatic
 
 `download_data.py` skips any file already present in `data/`, so it never overwrites an existing grab. OSM is live, so a fresh grab won't byte-match an older file; delete the parquet first if you want to refresh it.
 
+### Package Inputs
+
+To bundle all data needed to run Naming standalone:
+
+```bash
+./make_inputs_zip.sh
+```
+
+This writes `naming_inputs.zip` with entries under `data/...`. Unzip it from
+`Naming/` to restore the paths expected by `naming.py` and `generate_names.py`.
+
 ## Usage
 
 ```bash

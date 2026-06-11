@@ -140,6 +140,26 @@ python Naming/download_data.py
 ```
 **OS Open Names** (~2 GB) needs a manual download from [OS Data Hub](https://osdatahub.os.uk/downloads/open/OpenNames); extract to `Naming/data/os_open_names/`. Outputs land in `Naming/exports/`.
 
+### Package Input Data
+
+The Boundaries, Classification, and Naming stages each have a `make_inputs_zip.sh`
+script that bundles the data files needed to run that stage standalone. From the
+repo root:
+
+```bash
+./make_all_input_zips.sh
+```
+
+This writes one zip for each data-dependent stage:
+
+- `Boundaries/boundaries_inputs.zip`
+- `Classification/classification_inputs.zip`
+- `Naming/naming_inputs.zip`
+
+Unzip each bundle from inside its stage directory to restore the expected paths.
+The Foursquare retrieval stage has no data input bundle; create
+`Foursquare_POI_retrieval/.env` locally with `FOURSQUARE_ICEBERG_TOKEN`.
+
 ### Testing
 ```bash
 pytest Boundaries/tests
@@ -148,4 +168,3 @@ pytest Boundaries/tests
 ## Acquiring Input Data
 
 Each subproject has its own input-data needs documented in its own README. 
-

@@ -1,11 +1,13 @@
 # Input data
-data/
+data/*
+!data/.gitkeep
 *.gpkg
 *.parquet
 *.zip
 
 # Output data
-exports/
+exports/*
+!exports/.gitkeep
 
 # R reference repo (has its own git)
 Retail-Centre-Boundaries/
