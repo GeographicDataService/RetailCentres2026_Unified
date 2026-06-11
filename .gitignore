@@ -13,3 +13,5 @@ cache/
 
 # Local input bundles for external storage
 *_inputs.zip
+
+comparison/
