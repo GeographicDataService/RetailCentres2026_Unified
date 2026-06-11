@@ -1,6 +1,6 @@
 # Retail Centre Boundary Creation
 Owen Goodwin - Geographic Data Service
-Date: December 2025
+Current as of: June 2026
 ---
 
 ## Overview
@@ -509,4 +509,3 @@ merge_adjacent: [True]                  # Enable/disable merging
 **Additional Fields:**
 - `big_box_proportion` (float): Fraction of POIs matching big-box brands
 - `osm_retail_overlap` (float): Overlap fraction with OSM retail land use
-

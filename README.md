@@ -20,13 +20,13 @@ The repository is made out of 4 separate subprojects which should be run in turn
 ## Code Structure
 ```
 ├── .venv/                         # single shared venv (uv-managed)
-├── pyproject.toml                 # union of deps from all three subprojects
+├── pyproject.toml                 # union of deps from all four subprojects
 ├── .python-version                # 3.12
 ├── README.md                      # this file
 │
 ├── Foursquare_POI_retrieval/      # upstream POI retrieval (feeds Boundaries)
-│   ├── run_foursquare.sh          # 3-stage wrapper (query → clean → uk_postprocessing)
-│   ├── src/                       # query_foursquare_bycc_iceberg / clean_foursquare / uk_postprocessing
+│   ├── run_foursquare.sh          # 2-stage wrapper (query → clean)
+│   ├── src/                       # query_foursquare_bycc_iceberg / clean_foursquare
 │   ├── pipelines/                 # params.yaml (filename / country code)
 │   └── data/                      # POI inputs/outputs (gitignored)
 │
@@ -44,13 +44,13 @@ The repository is made out of 4 separate subprojects which should be run in turn
 │   ├── 0_run_all.py               # main entry point
 │   ├── config.yaml                # all paths and settings
 │   ├── rc_classification.py
-│   └── rc_id_lookup_build.py / rc_lookup.py / rc_ldcN.py
+│   └── rc_id_lookup_build.py / rc_lookup.py / rc_foursquare_anchors.py
 │
 └── Naming/                        # naming pipeline
     ├── naming.py                  # stage 1: build lookup tables
     ├── generate_names.py          # stage 2: assemble final names
     ├── download_data.py           # ONS / Scottish / NI reference data
-    ├── compare_names.py / naming_comparison.py
+    ├── scripts/                   # compare_names.py / naming_comparison.py / ad-hoc analysis
     ├── data/                      # reference boundaries, POI, gazetteers
     └── exports/                   # final named centres (.gpkg, .parquet, .csv)
 ```
@@ -59,7 +59,7 @@ The repository is made out of 4 separate subprojects which should be run in turn
 
 ### Installation
 
-A single shared venv at the workspace root services all three subprojects.
+A single shared venv at the workspace root services all four subprojects.
 
 ```bash
 # From RetailCentres_Unified/
@@ -68,7 +68,7 @@ source .venv/bin/activate
 uv pip install -e .
 ```
 
-The `pyproject.toml` is the union of dependencies from all three subprojects. After install, every script in every subfolder runs against this same `.venv`.
+The `pyproject.toml` is the union of dependencies from all four subprojects. After install, every script in every subfolder runs against this same `.venv`.
 
 Fallback (no `uv`):
 ```bash
@@ -152,6 +152,4 @@ pytest Boundaries/tests
 ## Acquiring Input Data
 
 Each subproject has its own input-data needs documented in its own README. 
-
-
 

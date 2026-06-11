@@ -4,8 +4,8 @@ Produces the **UK Foursquare POI file** that the [`Boundaries/`](../Boundaries/)
 consumes at `Boundaries/data/inputs/poi/uk_foursquare_cc_nov_iceberg.parquet`. This sits
 *upstream* of Boundaries in the workspace pipeline.
 
-It queries Foursquare/Overture places via [DuckDB](https://duckdb.org/), normalises the
-result, and attaches UK administrative geography. The current file is built from the
+It queries Foursquare OS Places via [DuckDB](https://duckdb.org/) and normalises the
+result into the fields used downstream. The current file is built from the
 **November** Foursquare release (hence the `_nov_` in the filename). Adapted from the
 [`cjber/overture-uk`](https://github.com/cjber/overture-uk) project by
 [Patrick Ballantyne](https://www.liverpool.ac.uk/environmental-sciences/staff/patrick-ballantyne)
@@ -26,7 +26,7 @@ Two stages (orchestrated by [`run_foursquare.sh`](run_foursquare.sh)):
 
 ## Run
 
-Uses the single shared workspace `.venv` (see the [root README](../README.md) — `uv sync`).
+Uses the single shared workspace `.venv` (see the [root README](../README.md)).
 
 ```bash
 source ../.venv/bin/activate
@@ -37,7 +37,7 @@ cp .env.example .env        # then edit .env and set FOURSQUARE_ICEBERG_TOKEN
 # dataset page: https://places.foursquare.com/dataset/OS%20Places/code
 # It is a JWT (starts with "eyJ..."); paste the whole string as FOURSQUARE_ICEBERG_TOKEN.
 
-# Run all three stages
+# Run both stages
 cd Foursquare_POI_retrieval
 ./run_foursquare.sh
 
