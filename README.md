@@ -77,12 +77,16 @@ pip install -e .
 
 ### Run everything (single command)
 
-[`run_all.sh`](run_all.sh) runs all stages in order and copies each stage's output into the next stage's input:
+[`run_all.sh`](run_all.sh) runs all stages in order (Foursquare POI retrieval → Boundaries →
+Classification → Naming) and copies each stage's output into the next stage's input:
 
 ```bash
 source .venv/bin/activate
 ./run_all.sh my_run
 ```
+
+The first stage needs `FOURSQUARE_ICEBERG_TOKEN` in `Foursquare_POI_retrieval/.env`
+(see [`Foursquare_POI_retrieval/README.md`](Foursquare_POI_retrieval/README.md)).
 
 Or run the stages individually:
 
