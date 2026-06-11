@@ -1,0 +1,26 @@
+[project]
+name = ""
+version = ""
+description = ""
+authors = []
+dependencies = [
+    "ipython>=8.16.1",
+    "duckdb>=1.1.0",
+    "ipdb>=0.13.13",
+    "pyarrow>=13.0.0",
+    "geopandas>=0.14.0",
+    "h3pandas>=0.2.4",
+    "dagshub>=0.3.8.post1",
+    "dvc[gs,s3]>=3.56.0",
+    "geodatasets>=2023.3.0",
+    "mapclassify>=2.6.1",
+    "numba>=0.58.0",
+    "dvc-s3>=2.23.0",
+    "jupyter>=1.0.0",
+    "matplotlib>=3.8.2",
+    "python-dotenv>=1.0.0",
+]
+requires-python = ">=3.11,<=3.12"
+readme = "README.md"
+license = {text = "MIT"}
+

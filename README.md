@@ -9,6 +9,7 @@ A single repository for the three subprojects of the 2026 GeoDS UK Retail Centre
 
 | Subfolder | Purpose | 
 |-----------|---------|
+| [`Foursquare_POI_retrieval/`](Foursquare_POI_retrieval/) | Retrieves & cleans the UK Foursquare POI file that feeds Boundaries |
 | [`Boundaries/`](Boundaries/) | Indetifies the centres & defines the centre bounds |
 | [`Classification/`](Classification/) | Classifies the centres into a hierarchy based on size and rank in LAD/BAU.|
 | [`Naming/`](Naming/) | Assigns each centre a unique name |
@@ -20,6 +21,12 @@ A single repository for the three subprojects of the 2026 GeoDS UK Retail Centre
 ├── pyproject.toml                 # union of deps from all three subprojects
 ├── .python-version                # 3.12
 ├── README.md                      # this file
+│
+├── Foursquare_POI_retrieval/      # upstream POI retrieval (feeds Boundaries)
+│   ├── run_foursquare.sh          # 3-stage wrapper (query → clean → uk_postprocessing)
+│   ├── src/                       # query_foursquare_bycc_iceberg / clean_foursquare / uk_postprocessing
+│   ├── pipelines/                 # params.yaml (filename / country code)
+│   └── data/                      # POI inputs/outputs (gitignored)
 │
 ├── Boundaries/                    # boundary generation toolkit
 │   ├── src/
@@ -80,6 +87,19 @@ source .venv/bin/activate
 Or run the stages individually:
 
 ### Run Pipelines (individually)
+
+**Foursquare POI retrieval** (`Foursquare_POI_retrieval/`) — *upstream of Boundaries*:
+```bash
+cd Foursquare_POI_retrieval
+cp .env.example .env          # set FOURSQUARE_ICEBERG_TOKEN — JWT from the "Access via code"
+                              # section of https://places.foursquare.com/dataset/OS%20Places/code
+./run_foursquare.sh           # query → clean (November Foursquare release)
+cp data/processed/uk_foursquare_cc_nov_iceberg.parquet \
+   ../Boundaries/data/inputs/poi/uk_foursquare_cc_nov_iceberg.parquet
+```
+Generates the UK Foursquare POI parquet that Boundaries reads at
+`Boundaries/data/inputs/poi/uk_foursquare_cc_nov_iceberg.parquet`. Only the Foursquare token
+is needed.
 
 **Boundary generation** (`Boundaries/`):
 ```bash

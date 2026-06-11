@@ -46,6 +46,10 @@ dependencies = [
     "pyogrio>=0.10",
     "requests>=2.32",
     "scipy>=1.13",
+    # --- additions for Foursquare_POI_retrieval (POI retrieval pipeline) ---
+    # duckdb/geopandas/pyarrow/pandas above already cover the query+clean steps;
+    # the httpfs/iceberg DuckDB extensions are auto-installed at runtime.
+    "python-dotenv>=1.0.0",  # loads FOURSQUARE_ICEBERG_TOKEN from .env for the query + category lookup
 ]
 
 [build-system]
