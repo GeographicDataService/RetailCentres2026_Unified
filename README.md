@@ -142,7 +142,7 @@ Reference data fetch:
 python Naming/download_data.py
 ```
 
-### Input Data Zips
+### Acquiring Input Data
 
 The Boundaries, Classification, and Naming stages rely on a large number of
 auxiliary geographic datasets. The locations and access dates for these files
@@ -172,6 +172,6 @@ Place each zip in its matching stage folder and unzip it there:
 pytest Boundaries/tests
 ```
 
-## Acquiring Input Data
 
-Each subproject has its own input-data needs documented in its own README. 
+
+
