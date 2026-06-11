@@ -1,18 +1,20 @@
 # Retail Centres — Unified Workspace (2026)
 
-A single repository for the three subprojects of the 2026 GeoDS UK Retail Centres.
+A single repository for the four subprojects of the 2026 GeoDS UK Retail Centres.
 **Authors:** Owen Goodwin (owen.goodwin@liverpool.ac.uk), Carol Yin (carolyin@liverpool.ac.uk)
 
 **Method adapted from:** [Open Retail Centres: A National Open Data Set of Retail Centre Boundaries and Indicators](https://www.nature.com/articles/s41597-022-01556-3) — *Nature Scientific Data* (2022)
 
 <img width="1407" height="726" alt="UK retail centre boundaries" src="https://github.com/user-attachments/assets/57fa2bca-145c-400d-ab2b-0883a24c748e" />
 
-| Subfolder | Purpose | 
-|-----------|---------|
-| [`Foursquare_POI_retrieval/`](Foursquare_POI_retrieval/) | Retrieves & cleans the UK Foursquare POI file that feeds Boundaries |
-| [`Boundaries/`](Boundaries/) | Indetifies the centres & defines the centre bounds |
-| [`Classification/`](Classification/) | Classifies the centres into a hierarchy based on size and rank in LAD/BAU.|
-| [`Naming/`](Naming/) | Assigns each centre a unique name |
+The repository is made out of 4 separate subprojects which should be run in turn to produce the final data product:
+
+| # | Subfolder | Purpose |
+|---|-----------|---------|
+| 1 | [`Foursquare_POI_retrieval/`](Foursquare_POI_retrieval/) | Retrieves & cleans the UK Foursquare POI file that feeds Boundaries |
+| 2 | [`Boundaries/`](Boundaries/) | Identifies the centres & defines the centre bounds |
+| 3 | [`Classification/`](Classification/) | Classifies the centres into a hierarchy based on size and rank in LAD/BUA |
+| 4 | [`Naming/`](Naming/) | Assigns each centre a unique name |
 
 
 ## Code Structure
