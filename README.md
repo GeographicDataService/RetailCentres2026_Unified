@@ -142,6 +142,14 @@ Reference data fetch:
 python Naming/download_data.py
 ```
 
+**H3 lookup** (`scripts/`): build a `Retail_ID,H3_11` CSV of the res-11 cells making up each
+centre. Run by hand against the final bounds; it verifies itself by rebuilding the
+boundaries from the cell list and comparing them to the input (non-zero exit on mismatch).
+```bash
+python scripts/build_h3_lookup.py --bounds Naming/exports/retailcentre_bounds_uk.gpkg
+# --no-verify to skip the rebuild check, --diff-out diffs.gpkg to write mismatching centres
+```
+
 ### Acquiring Input Data
 
 The Boundaries, Classification, and Naming stages rely on a large number of
