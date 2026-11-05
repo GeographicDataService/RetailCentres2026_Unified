@@ -1,0 +1,6 @@
+data/
+outputs/
+logs/
+archive/
+__pycache__/
+check_paper.py
