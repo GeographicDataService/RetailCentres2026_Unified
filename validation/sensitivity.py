@@ -102,10 +102,8 @@ def subcentre_stability(overwrite):
     if RELEASE.exists() and not overwrite:
         print(f"{RELEASE} exists, left unchanged (use --overwrite to replace it).")
         return
-    cols = ["mean_jaccard", "pct_seeds_j75", "pct_seeds_j90"]  # centres outside the split networks are the same in every seed
-    rel = published[["RC_ID"]].merge(d[["RC_ID"] + cols], on="RC_ID", how="left")
-    rel.insert(1, "Leiden_split", rel.mean_jaccard.notna())
-    rel = rel.fillna({"mean_jaccard": 1.0, "pct_seeds_j75": 100.0, "pct_seeds_j90": 100.0})
+    # only the sub-centres of Leiden-split networks; every other centre is identical in every seed
+    rel = d[["RC_ID", "mean_jaccard", "pct_seeds_j75", "pct_seeds_j90"]].sort_values("RC_ID", key=lambda s: s.astype(int))
     rel.rename(columns={"mean_jaccard": "Seed_Jaccard", "pct_seeds_j75": "Pct_Seeds_J75", "pct_seeds_j90": "Pct_Seeds_J90"}).to_csv(RELEASE, index=False)
 
 

@@ -150,18 +150,20 @@ python scripts/build_h3_lookup.py --bounds Naming/exports/retailcentre_bounds_uk
 # --no-verify to skip the rebuild check, --diff-out diffs.gpkg to write mismatching centres
 ```
 
-**Old ↔ new lookup** (`scripts/`): match the 2022 centres to the new ones by shared H3 cells.
-One row per overlapping pair (`Old_RC_ID,New_RC_ID,Pct_of_Old,Pct_of_New`); a centre can
-appear on several rows. Centres missing from the file have no counterpart.
+**2022 ↔ 2026 lookup** (`scripts/`): match the 2022 centres to the 2026 ones by shared H3 cells.
+One row per overlapping pair (`RC_ID_2022, RC_Name_2022, RC_ID_2026, RC_Name_2026,
+Percent_of_2022_Centre, Percent_of_2026_Centre, Change_Type`); a centre can appear on several rows.
+`Change_Type` (One-to-one, Split, Merged, Complex) describes the group of centres linked by overlaps,
+as in the ONS change indicator. Centres missing from the file have no counterpart.
 ```bash
 python scripts/build_old_new_lookup.py   # -> Naming/exports/retailcentre_old_new_lookup.csv
 ```
 
 **Sub-centre stability** (`validation/`): how reliably each centre's Leiden split is reproduced
 across 20 extra seeds (`RC_ID,Leiden_split,Seed_Jaccard,Pct_Seeds_J75,Pct_Seeds_J90`). Only the 168
-centres in split networks can vary; all others are 1.0 / 100. Needs the `val2_seed_*` runs.
+centres in split networks can vary, so only they are listed. Needs the `val2_seed_*` runs.
 ```bash
-python validation/subcentre_stability.py   # -> Naming/exports/retailcentre_subcentre_stability.csv
+python validation/sensitivity.py --overwrite   # -> Naming/exports/retailcentre_subcentre_stability.csv
 ```
 
 ### Acquiring Input Data
