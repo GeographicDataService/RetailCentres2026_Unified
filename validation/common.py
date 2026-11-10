@@ -12,7 +12,7 @@ OUT = HERE / "outputs"
 LADS = ROOT / "Boundaries/data/inputs/boundaries/Local_Authority_Districts_December_2022_UK_BGC_V2_5759908710055972638.gpkg"
 COUNTRIES = ROOT / "Boundaries/data/inputs/boundaries/Countries_December_2022_UK_BGC_1943732719298389253.gpkg"
 PUBLISHED = ROOT / "Naming/exports/retailcentre_bounds_uk.parquet"
-OLD = Path("/home/ogoodwin/projects/RetailCentres_Paper/data/macdonald2022_retail_centres.parquet")  # Macdonald et al. (2022)
+OLD = DATA / "macdonald2022_retail_centres.parquet"  # Macdonald et al. (2022)
 OLD_CLASSIFIED = ROOT / "Classification/geo/old_retail_mapmaker/Retail_Boundaries_UK.gpkg"  # the same, with classes
 
 # Boundaries runs for the sensitivity analysis (prep/run_sensitivity.sh); val2_baseline reproduces the published run

@@ -4,7 +4,7 @@ import geopandas as gpd
 import pandas as pd
 import os
 
-OLD_PATH = "/home/ogoodwin/projects/RetailCentres/data/old_retail_centres/Retail_Boundaries_UK.gpkg"
+OLD_PATH = "Retail_Boundaries_UK.gpkg"  # Naming/ copy, identical to Boundaries/data/old_retail_centres/
 NEW_PATH = "exports/rc2025_named.gpkg"
 EXPORTS_DIR = "exports"
 
