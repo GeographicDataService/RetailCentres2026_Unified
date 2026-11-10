@@ -103,8 +103,14 @@ def subcentre_stability(overwrite):
         print(f"{RELEASE} exists, left unchanged (use --overwrite to replace it).")
         return
     # only the sub-centres of Leiden-split networks; every other centre is identical in every seed
-    rel = d[["RC_ID", "mean_jaccard", "pct_seeds_j75", "pct_seeds_j90"]].sort_values("RC_ID", key=lambda s: s.astype(int))
-    rel.rename(columns={"mean_jaccard": "Seed_Jaccard", "pct_seeds_j75": "Pct_Seeds_J75", "pct_seeds_j90": "Pct_Seeds_J90"}).to_csv(RELEASE, index=False)
+    # mean IoU (H3 cells) with the best-matching sub-centre over the 20 seed runs; >= 0.75 is stable
+    # Parent_ID numbers the 22 split centres (1-22); it is a group number, not an RC_ID
+    parent = pd.read_parquet(ROOT / "Naming/exports/rc2025_named.parquet", columns=["RC_ID", "Parent_ID"])
+    rel = d[["RC_ID", "RC_Name", "mean_jaccard"]].astype({"RC_ID": int})
+    rel = rel.merge(parent.astype({"RC_ID": int, "Parent_ID": float}), on="RC_ID", how="left")
+    rel = rel.astype({"Parent_ID": int}).sort_values(["Parent_ID", "RC_ID"])
+    rel.rename(columns={"Parent_ID": "Parent Centre Group", "mean_jaccard": "Stability Score (Mean IoU over 20 seeds)"})[
+        ["RC_ID", "Parent Centre Group", "RC_Name", "Stability Score (Mean IoU over 20 seeds)"]].to_csv(RELEASE, index=False)
 
 
 def main():

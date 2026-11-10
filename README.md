@@ -160,7 +160,7 @@ python scripts/build_old_new_lookup.py   # -> Naming/exports/retailcentre_old_ne
 ```
 
 **Sub-centre stability** (`validation/`): how reliably each centre's Leiden split is reproduced
-across 20 extra seeds (`RC_ID,Leiden_split,Seed_Jaccard,Pct_Seeds_J75,Pct_Seeds_J90`). Only the 168
+across 20 extra seeds (`RC_ID, Parent Centre Group, RC_Name, Stability Score (Mean IoU over 20 seeds)`; the group numbers the 22 split centres and is not an RC_ID; the score is the mean IoU with the best-matching sub-centre, 0.75 or above is stable; sorted by group). Only the 168
 centres in split networks can vary, so only they are listed. Needs the `val2_seed_*` runs.
 ```bash
 python validation/sensitivity.py --overwrite   # -> Naming/exports/retailcentre_subcentre_stability.csv
