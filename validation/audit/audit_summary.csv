@@ -1,0 +1,10 @@
+Audit_Group,Population,Sampled,Judged_Yes,Judged_No,Judged_Unsure
+"Land-use removal (75% or more overlap, under 20 POIs)",607,50,3,47,0
+Land-use removal near threshold (75-80% overlap),32,15,4,11,0
+Land-use removal near POI exemption (15-19 POIs),123,15,1,13,1
+Land-use kept below threshold (50-75% overlap),248,50,37,10,3
+Land-use kept near threshold (70-75% overlap),45,15,7,8,0
+Land-use kept by 20-POI exemption (75% or more overlap),141,50,33,16,1
+Land-use kept near POI exemption (20-24 POIs),60,15,7,8,0
+One-cell merge,999,50,43,1,6
+Detected retail park,1172,75,72,3,0

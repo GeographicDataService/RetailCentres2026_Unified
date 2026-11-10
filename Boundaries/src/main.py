@@ -1,4 +1,5 @@
 import argparse
+import ast
 import polars as pl
 import numpy as np
 import itertools
@@ -25,7 +26,21 @@ parser.add_argument(
     action="store_true",
     help="Use presaved quality filter results (faster). If not set, runs filters from scratch and saves IDs for future use."
 )
+parser.add_argument(
+    "--set",
+    action="append",
+    default=[],
+    metavar="KEY=VALUE",
+    help="Override a config value for this run, e.g. --set LEIDEN_SEED=1 (repeatable)."
+)
 args = parser.parse_args()
+
+for override in args.set:
+    key, value = override.split("=", 1)
+    if not hasattr(config, key):
+        parser.error(f"Unknown config key: {key}")
+    setattr(config, key, ast.literal_eval(value))
+    print(f"Config override: {key} = {getattr(config, key)!r}")
 
 # Set random seed for reproducibility
 random.seed(config.RANDOM_SEED)

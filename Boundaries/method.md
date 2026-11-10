@@ -41,9 +41,9 @@ Traditional Retail Centre Pipeline    Retail Park Pipeline                      
 ├─ Stage 4: Network Construction      └─ Stage 11: H3 Conversion and Aggregation    │
 ├─ Stage 5: Network Thresholding                                                     │
 ├─ Stage 6: Gap Filling                                                              │
-├─ Stage 7: Subcentre Detection                                                      │
-├─ Stage 8: Land Use Filtering                                                       │
-└─ Stage 9: Adjacent Centre Merging                                                  │
+├─ Stage 7: Land Use Filtering                                                       │
+├─ Stage 8: Adjacent Centre Merging                                                  │
+└─ Stage 9: Subcentre Detection                                                      │
          │                                     │                                      │
          └─────────────────────────────────────┴──────────────────────────────────────┘
                                                │
@@ -138,7 +138,7 @@ These POIs often have legitimate retail/business categories as secondary categor
 
 ---
 
-### Traditional Retail Centre Pipeline (Stages 3-7)
+### Traditional Retail Centre Pipeline (Stages 3-9)
 *Hex-based POI aggregation and network detection*
 
 ---
@@ -213,7 +213,68 @@ Criteria for H3 Cell Inclusion:
 
 ---
 
-### Stage 7: Subcentre Detection (Community Detection)
+### Stage 7: Land Use Filtering
+
+**Objective:** Remove false positives in commercial/industrial areas (industrial estates with trade counters, business parks with retail related POIs)
+
+**Implementation:** `src/retail/retail_landuse_poi_filter.py`
+
+**Exclusion Logic:**
+
+#### 7a: Commercial/Industrial Overlap
+**Data Source:** OSM `landuse=commercial` and `landuse=industrial` polygons
+
+**Overlap Calculation:**
+1. Spatial intersection of centre boundary with commercial/industrial polygons
+2. Compute `overlap_fraction = intersection_area / centre_area`
+
+**Threshold Rules:**
+- `overlap_fraction > 0.75` AND `total_pois < 20`: Remove (likely industrial estate)
+
+**Examples Filtered:**
+- Industrial estates with trade counters
+
+
+#### 7b: Quality Assurance Checks
+- Manual review of centres near airports, stadiums, universities
+- Hardcoded exceptions in `src/retail/manual_edits.py` (~180 H3 cells)
+
+**Output:** Refined centre list with commercial/industrial false positives removed
+
+---
+
+### Stage 8: Adjacent Centre Merging
+
+**Objective:** Reunite artificially fragmented continuous retail areas
+
+**Implementation:** `src/retail/network_merger.py` (post-processing phase)
+
+**Merge Criteria:**
+1. **Spatial proximity**: Two centres are separated by exactly one empty cell, i.e. a cell adjacent
+   to both. The gap is fixed at one cell; it is not a parameter.
+2. **Size threshold**: At least one of the two has ≤ `merge_h3_threshold` H3 cells (10, set in
+   `generate_networks.py`). The threshold counts cells, not POIs.
+   - The bridge cell(s) are added and the pair becomes one centre. Pairs are joined transitively,
+     so a chain of small fragments can merge into one centre.
+
+**Typical Cases:**
+- High streets split by pedestrian crossings
+- Town centres divided by market squares or small parks
+- Shopping parades separated by residential blocks
+
+**Algorithm:**
+```
+FOR each centre pair:
+    IF separation == 1 cell AND min(cells_a, cells_b) <= merge_h3_threshold:
+        ADD bridge cell(s); MERGE the two centres
+        UPDATE statistics
+```
+
+**Output:** Merged centres with reduced artificial fragmentation
+
+---
+
+### Stage 9: Subcentre Detection (Community Detection)
 
 **Objective:** Split large retail networks into subcentres based on POI density. Large retail areas (e.g., major city centres) often contain multiple distinct retail hubs. This stage identifies and delineates these subcentres within large networks.
 
@@ -242,64 +303,6 @@ Criteria for H3 Cell Inclusion:
 
 ---
 
-### Stage 8: Land Use Filtering
-
-**Objective:** Remove false positives in commercial/industrial areas (industrial estates with trade counters, business parks with retail related POIs)
-
-**Implementation:** `src/retail/retail_landuse_poi_filter.py`
-
-**Exclusion Logic:**
-
-#### 8a: Commercial/Industrial Overlap
-**Data Source:** OSM `landuse=commercial` and `landuse=industrial` polygons
-
-**Overlap Calculation:**
-1. Spatial intersection of centre boundary with commercial/industrial polygons
-2. Compute `overlap_fraction = intersection_area / centre_area`
-
-**Threshold Rules:**
-- `overlap_fraction > 0.75` AND `total_pois < 20`: Remove (likely industrial estate)
-
-**Examples Filtered:**
-- Industrial estates with trade counters
-
-
-#### 8b: Quality Assurance Checks
-- Manual review of centres near airports, stadiums, universities
-- Hardcoded exceptions in `src/retail/manual_edits.py` (~180 H3 cells)
-
-**Output:** Refined centre list with commercial/industrial false positives removed
-
----
-
-### Stage 9: Adjacent Centre Merging
-
-**Objective:** Reunite artificially fragmented continuous retail areas
-
-**Implementation:** `src/retail/network_merger.py` (post-processing phase)
-
-**Merge Criteria:**
-1. **Spatial proximity**: Centres separated by ≤1 empty cell
-2. **Size threshold**: At least one centre has POI count < `merge_h3_threshold` (default: 10)
-   - Smaller centre is merged into adjacent larger centre
-
-**Typical Cases:**
-- High streets split by pedestrian crossings
-- Town centres divided by market squares or small parks
-- Shopping parades separated by residential blocks
-
-**Algorithm:**
-```
-FOR each centre pair:
-    IF separation == 1 cell AND one_centre_pois < merge_h3_threshold:
-        MERGE smaller centre into larger centre
-        UPDATE statistics
-```
-
-**Output:** Merged centres with reduced artificial fragmentation
-
----
-
 ### Retail Park Pipeline (Stages 10-11)
 *Big-box POI-based detection - runs in parallel to traditional centre pipeline*
 
@@ -321,7 +324,7 @@ This is an entirely separate method which works in parallel to the traditional c
 
 **Retail Park Criteria:**
 1. Fraction of POIs within polygon which match big-box brands > 0.05 (5%) - this is low but there are very few false positives at this level. Raising any higher starts to remove genuine retail parks.
-2. Size greater than 0.07 km² (7000 m²) - ensures minimum spatial extent - this removes a small number of false positives in dense urban areas (mainly London), where big box stores often exist in unusual formats (B&Q on high street etc)
+2. Size greater than 0.007 km² (7000 m²) - ensures minimum spatial extent - this removes a small number of false positives in dense urban areas (mainly London), where big box stores often exist in unusual formats (B&Q on high street etc)
 
 Passing this criteria marks the polygon as a retail park.
 
