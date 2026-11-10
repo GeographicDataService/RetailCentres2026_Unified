@@ -232,7 +232,8 @@ def generate_networks(
         print(f"Networks before merge: {n_networks_before}")
 
         filt_cells_with_network = network_merger.merge_networks_separated_by_one_cell(
-            filt_cells_with_network, merge_h3_threshold=10
+            filt_cells_with_network, merge_h3_threshold=10,
+            pairs_path=f"{save_folder}/merge_pairs.parquet",
         )
         filt_cells_with_network = ut.join_networks_with_cells(
             filt_cells_with_network, input_cells

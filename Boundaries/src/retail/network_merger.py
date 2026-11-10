@@ -10,13 +10,14 @@ from typing import DefaultDict
 
 
 
-def merge_networks_separated_by_one_cell(data: pl.DataFrame, merge_h3_threshold: int)  -> pl.DataFrame:
+def merge_networks_separated_by_one_cell(data: pl.DataFrame, merge_h3_threshold: int, pairs_path: str = None)  -> pl.DataFrame:
     """
     Merges networks in the data that are separated by a single H3 cell.
 
     Args:
         data (pl.DataFrame): A DataFrame with columns 'h3_11', 'network_number', and 'trackNodes'.
         merge_h3_threshold (int): Maximum size which should be merged into a adjencent network
+        pairs_path (str, optional): If set, write the merged pairs (with trackNodes and bridge cells) here
 
     Returns:
         pl.DataFrame: A DataFrame with merged network numbers.
@@ -30,6 +31,7 @@ def merge_networks_separated_by_one_cell(data: pl.DataFrame, merge_h3_threshold:
     
     valid_pairs = []
     valid_networks = set()
+    pair_rows = []
 
     for (net1, net2), hexes in overlap_by_pair.items():
         tn1 = data.filter(pl.col("network_number") == net1)["trackNodes"][0]
@@ -37,6 +39,12 @@ def merge_networks_separated_by_one_cell(data: pl.DataFrame, merge_h3_threshold:
         if tn1 <= merge_h3_threshold or tn2 <= merge_h3_threshold:
             valid_pairs.append((net1, net2))
             valid_networks.update([net1, net2])
+            pair_rows.append({"network_1": net1, "network_2": net2, "trackNodes_1": tn1,
+                              "trackNodes_2": tn2, "bridge_cells": sorted(hexes)})
+
+    if pairs_path:
+        pl.DataFrame(pair_rows, schema={"network_1": pl.Int64, "network_2": pl.Int64, "trackNodes_1": pl.Int64,
+                                        "trackNodes_2": pl.Int64, "bridge_cells": pl.List(pl.Utf8)}).write_parquet(pairs_path)
 
     if not valid_pairs:
         print("No valid network pairs to merge under the trackNodes threshold.")
