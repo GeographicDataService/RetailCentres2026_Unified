@@ -29,8 +29,7 @@ bash validation/run_all.sh
   quality-filter IDs, then `prep/run_sensitivity.sh` and `prep/run_postcode_sensitivity.sh` write
   `Boundaries/data/outputs/runs/val2_*` (many hours, ~29 GB peak). `val2_baseline` reproduces the published run.
 - **Audit sample:** `prep/build_audit.py` drew the frozen sample (`outputs/audit/cases.gpkg`); it was labelled with
-  `prep/label_server.py` (open http://localhost:8765; questions in `audit_protocol.md`). Scores use
-  `outputs/audit/labels_scored.csv`, which is `labels.csv` without SLC-005 (labelled before the random 20 were chosen).
+  `prep/label_server.py` (open http://localhost:8765; questions in `audit/README.md`); labels are saved to `outputs/audit/labels.csv`, which `audit.py` scores.
 - **OS Points of Interest** (licensed, through Digimap): the class *Shopping centres and retail parks* as GeoPackage in
   `validation/data/os/`. Only statistics leave this folder.
 

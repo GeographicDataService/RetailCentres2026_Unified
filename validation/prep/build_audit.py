@@ -9,6 +9,7 @@ Strata:
   missing_top         the 20 2022 centres (UK, any class) with no overlapping new centre and the most
                       2022 retail POIs; chosen, not sampled                                     (--add)
   missing_slc         50 of the 422 English 2022 Small Local Centres with no overlapping new centre (--add)
+                      (only a random 20 of the 50 were labelled; the other 30 were later dropped from cases.gpkg)
   park_ratio_gained   10 parks that appear only when the brand ratio is lowered to 2.5% (val2_brand_0.025) (--add)
   park_ratio_lost     10 published parks that disappear when it is raised to 7.5% (val2_brand_0.075)     (--add)
   landuse_kept_near   15 more kept networks at 70% <= overlap < 75%, not already sampled              (--add)

@@ -41,7 +41,7 @@ def make_handler(labels_path, cases_path):
             elif self.path == "/labels":
                 self._send(json.dumps(read_labels(labels_path)))
             elif self.path == "/protocol":
-                self._send((HERE / "audit_protocol.md").read_text(), "text/plain; charset=utf-8")
+                self._send((HERE / "audit" / "README.md").read_text(), "text/plain; charset=utf-8")
             else:
                 self._send("not found", "text/plain", 404)
 

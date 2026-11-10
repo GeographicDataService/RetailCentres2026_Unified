@@ -1,8 +1,7 @@
 """Step 3. Results of the manual audit of random samples (paper Sections 3.4, 4.1, 4.2.2).
 
 The sample (outputs/audit/cases.gpkg, sample_frame.csv) was drawn once by prep/build_audit.py and labelled with
-prep/label_server.py (outputs/audit/labels.csv); the question asked of each case is in audit_protocol.md. Scored from
-labels_scored.csv: labels.csv without SLC-005, which was labelled before the random 20 absent centres were chosen.
+prep/label_server.py (outputs/audit/labels.csv); the question asked of each case is in audit/README.md.
 Writes outputs/audit/results.csv: per stratum, the population, cases sampled, and yes / no / unsure answers.
 Run from repo root:  .venv/bin/python validation/audit.py
 """
@@ -23,7 +22,7 @@ STRATA = {  # stratum: what "yes" means
 
 def main():
     cases = gpd.read_file(AUDIT / "cases.gpkg", layer="cases")[["case_id", "stratum"]]
-    labels = pd.read_csv(AUDIT / "labels_scored.csv", dtype=str).drop_duplicates("case_id", keep="last")[["case_id", "label"]]
+    labels = pd.read_csv(AUDIT / "labels.csv", dtype=str).drop_duplicates("case_id", keep="last")[["case_id", "label"]]
     population = pd.read_csv(AUDIT / "sample_frame.csv").set_index("stratum").population
     d = cases.merge(labels, on="case_id", how="left")
     rows = [{"stratum": s, "yes_means": m, "population": int(population[s]), "sampled": int((d.stratum == s).sum()),
